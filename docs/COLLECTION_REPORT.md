@@ -279,7 +279,7 @@ the default download for users who only need images and metadata.
 ## Phases 13-14 — final QA and local release
 
 The local release was built at `data/release/museum-images/` and then validated from that release tree,
-not merely from the working/interim files. The first final validator run returned **PASS**:
+not merely from the working/interim files. The final validator returned **PASS**:
 
 - main rows / unique image IDs / unique filenames: **24,972 / 24,972 / 24,972**;
 - starter rows: **5,000** and every starter identity is a subset of the full metadata;
@@ -293,7 +293,7 @@ not merely from the working/interim files. The first final validator run returne
 - dimension mismatches: **0**;
 - full CSV/JSONL row counts match Parquet exactly;
 - required release docs: complete;
-- checksum files verified: **29,989**, failures **0**;
+- checksum files verified: **29,990**, failures **0**;
 - final measured release size: about **1.036 GB**, safely below the 4 GB target and 5 GB hard cap.
 
 The release builder is configured to record the exact final apparent byte count, including
