@@ -23,6 +23,13 @@ ROOT = Path(__file__).resolve().parents[1]
 KAGGLE_TITLE = "Smithsonian 25K Museum Image-Text Dataset"
 KAGGLE_SUBTITLE = "24,972 CC0 images, rich metadata, leakage-safe splits and a 5K starter set"
 KAGGLE_ID = "taeyangg4/smithsonian-25k-museum-image-text"
+KAGGLE_CONTROL_FILES = {
+    "dataset-metadata.json",
+    "dataset-cover-image.jpg",
+    "dataset-cover-image.jpeg",
+    "dataset-cover-image.png",
+    "dataset-cover-image.webp",
+}
 
 KAGGLE_FIELD_DESCRIPTIONS = {
     "image_id": "Stable integer image identifier assigned by this release pipeline.",
@@ -134,12 +141,10 @@ human-written visual caption.
 
 - `images/`: normalized JPEGs.
 - `metadata.parquet`: canonical full metadata (recommended).
-- `metadata.csv`: convenience table.
-- `captions.jsonl`: image IDs, filenames, and model-ready text.
-- `splits.csv`: object-level leakage-safe train/validation/test split assignments.
-- `starter_5k/`: balanced starter subset using the same schema and split assignments.
-- `SOURCES.md`, `RIGHTS_POLICY.md`, `DATA_DICTIONARY.md`: source, rights, and field documentation.
-- `release_manifest.json` and `checksums.sha256`: release audit information.
+- `starter_5k/`: balanced 5,000-image starter subset with its canonical Parquet metadata.
+- `exports/`: optional CSV/JSONL/split convenience exports derived from `metadata.parquet`.
+- `docs/`: source, rights, data-dictionary, distribution, and collection-QA documentation.
+- `provenance/`: release manifest, checksums, and the pinned source-snapshot manifest.
 
 CLIP embeddings are intentionally **not** part of the base V1 package. The repository contains an
 optional builder and side-artifact strategy so model-derived features can be versioned independently
@@ -150,7 +155,7 @@ without inflating or coupling the canonical image release.
 Automatic inclusion required both record-level Smithsonian metadata access **CC0** and the exact
 selected image media item access **CC0**. Ambiguous rights and sensitive-review candidates were not
 automatically released. CC0 addresses copyright; other rights such as privacy, publicity, trademark,
-or culturally sensitive use can still require consideration. See `RIGHTS_POLICY.md`.
+or culturally sensitive use can still require consideration. See `docs/RIGHTS_POLICY.md`.
 
 ## Splits
 
@@ -187,12 +192,114 @@ def _table_schema_fields(table_path: Path, fields: list[str] | None = None) -> l
     return result
 
 
-def _write_kaggle_metadata(path: Path, *, description: str, metadata_path: Path) -> None:
+def _write_kaggle_metadata(
+    path: Path,
+    *,
+    description: str,
+    metadata_path: Path,
+    release_root: Path,
+) -> None:
     metadata_schema = _table_schema_fields(metadata_path)
     split_fields = ["image_id", "object_id", "file_name", "category", "split"]
     split_schema = [field for field in metadata_schema if field["name"] in split_fields]
     caption_fields = ["image_id", "file_name", "object_id", "model_text", "text_source"]
     caption_schema = [field for field in metadata_schema if field["name"] in caption_fields]
+    all_resources = [
+        {
+            "path": "README.md",
+            "description": "Concise release overview, file map, rights summary, and split policy.",
+        },
+        {
+            "path": "metadata.parquet",
+            "description": "Canonical metadata table for all 24,972 released image rows.",
+            "schema": {"fields": metadata_schema},
+        },
+        {
+            "path": "exports/metadata.csv",
+            "description": "CSV convenience export with the same rows and columns as metadata.parquet.",
+            "schema": {"fields": metadata_schema},
+        },
+        {
+            "path": "exports/captions.jsonl",
+            "description": "Compact image identifiers plus deterministic Smithsonian model_text.",
+            "schema": {"fields": caption_schema},
+        },
+        {
+            "path": "exports/splits.csv",
+            "description": "Object-level leakage-safe train/validation/test assignments.",
+            "schema": {"fields": split_schema},
+        },
+        {
+            "path": "starter_5k/metadata.parquet",
+            "description": "Canonical Parquet metadata for the balanced 5,000-image starter subset.",
+            "schema": {"fields": metadata_schema},
+        },
+        {
+            "path": "docs/COLLECTION_REPORT.md",
+            "description": "Collection QA summary with final counts, exclusions, and category coverage.",
+        },
+        {
+            "path": "docs/DATA_DICTIONARY.md",
+            "description": "Detailed field definitions and source/derivation notes.",
+        },
+        {
+            "path": "docs/DISTRIBUTION.md",
+            "description": "Distribution notes for categories, institutions, splits, and release statistics.",
+        },
+        {
+            "path": "docs/RIGHTS_POLICY.md",
+            "description": "Exact CC0 eligibility gate and responsible-use caveats.",
+        },
+        {
+            "path": "docs/SOURCES.md",
+            "description": "Official Smithsonian source and provenance documentation.",
+        },
+        {
+            "path": "provenance/local_snapshot_manifest.json",
+            "description": "Hashes and identifiers pinning the Smithsonian metadata snapshot used for this release.",
+        },
+        {
+            "path": "provenance/release_manifest.json",
+            "description": "Machine-readable release manifest recording counts, sizes, and build provenance.",
+        },
+        {
+            "path": "provenance/checksums.sha256",
+            "description": "SHA-256 checksums for downloadable release files.",
+        },
+    ]
+
+    # Kaggle version creation only matches resource metadata against files uploaded
+    # directly from the release root. Directory uploads are archived first, so a
+    # nested path cannot match at that stage. Keep `resources` deliberately small
+    # so the two root files receive their descriptions/schema on V3 creation.
+    root_resource_paths = {"README.md", "metadata.parquet"}
+    root_resources = [item for item in all_resources if item["path"] in root_resource_paths]
+
+    # Kaggle CLI 2.2.2+ also supports the DatasetSettings `data` representation on
+    # metadata updates. Include exact byte sizes so the server has the strongest
+    # possible identity match for extracted/nested files after the version exists.
+    data_entries: list[dict[str, object]] = []
+    for resource in all_resources:
+        resource_path = release_root / str(resource["path"])
+        if not resource_path.is_file():
+            raise FileNotFoundError(resource_path)
+        entry: dict[str, object] = {
+            "name": str(resource["path"]),
+            "description": str(resource["description"]),
+            "totalBytes": int(resource_path.stat().st_size),
+        }
+        fields = (resource.get("schema") or {}).get("fields") or []
+        if fields:
+            entry["columns"] = [
+                {
+                    "name": str(field["name"]),
+                    "description": str(field.get("description") or field.get("title") or ""),
+                    "type": str(field.get("type") or "string"),
+                }
+                for field in fields
+            ]
+        data_entries.append(entry)
+
     payload = {
         "title": KAGGLE_TITLE,
         "subtitle": KAGGLE_SUBTITLE,
@@ -209,96 +316,8 @@ def _write_kaggle_metadata(path: Path, *, description: str, metadata_path: Path)
             "source URLs, rights fields, checksums, and build provenance are retained. Reproducible "
             "pipeline: https://github.com/TaeyanG4/smithsonian-image-text"
         ),
-        "resources": [
-            {
-                "path": "COLLECTION_REPORT.md",
-                "description": "Collection QA summary with final counts, exclusions, and category coverage.",
-            },
-            {
-                "path": "DATA_DICTIONARY.md",
-                "description": "Detailed field definitions and source/derivation notes.",
-            },
-            {
-                "path": "DISTRIBUTION.md",
-                "description": "Distribution notes for categories, institutions, splits, and other release statistics.",
-            },
-            {
-                "path": "KAGGLE_PAGE.md",
-                "description": "Long-form Kaggle data card source used to describe this release.",
-            },
-            {
-                "path": "README.md",
-                "description": "Release overview and quick file guide.",
-            },
-            {
-                "path": "RIGHTS_POLICY.md",
-                "description": "Exact CC0 eligibility gate and responsible-use caveats.",
-            },
-            {
-                "path": "SOURCES.md",
-                "description": "Official Smithsonian source and provenance documentation.",
-            },
-            {
-                "path": "captions.jsonl",
-                "description": "Compact image_id/file_name/object_id plus deterministic Smithsonian model_text.",
-                "schema": {"fields": caption_schema},
-            },
-            {
-                "path": "checksums.sha256",
-                "description": "SHA-256 checksums for release files used to verify downloaded bytes.",
-            },
-            {
-                "path": "cover_grid_manifest.json",
-                "description": "Manifest of the representative images and crop geometry used for the Kaggle cover.",
-            },
-            {
-                "path": "metadata.csv",
-                "description": "CSV convenience export with the same rows and columns as metadata.parquet.",
-                "schema": {"fields": metadata_schema},
-            },
-            {
-                "path": "metadata.parquet",
-                "description": "Canonical metadata table for all 24,972 released image rows.",
-                "schema": {"fields": metadata_schema},
-            },
-            {
-                "path": "release_manifest.json",
-                "description": "Machine-readable release manifest recording counts, sizes, hashes, and build provenance.",
-            },
-            {
-                "path": "splits.csv",
-                "description": "Object-level leakage-safe train/validation/test assignments.",
-                "schema": {"fields": split_schema},
-            },
-            {
-                "path": "starter_5k/captions.jsonl",
-                "description": "Starter-subset image identifiers and deterministic Smithsonian model_text.",
-                "schema": {"fields": caption_schema},
-            },
-            {
-                "path": "starter_5k/metadata.csv",
-                "description": "CSV metadata for the balanced 5,000-image starter subset.",
-                "schema": {"fields": metadata_schema},
-            },
-            {
-                "path": "starter_5k/metadata.parquet",
-                "description": "Canonical Parquet metadata for the balanced 5,000-image starter subset.",
-                "schema": {"fields": metadata_schema},
-            },
-            {
-                "path": "starter_5k/splits.csv",
-                "description": "Leakage-safe split assignments inherited by the 5,000-image starter subset.",
-                "schema": {"fields": split_schema},
-            },
-            {
-                "path": "provenance/local_snapshot_manifest.json",
-                "description": "Hashes and identifiers pinning the Smithsonian metadata snapshot used for this release.",
-            },
-            {
-                "path": "examples/starter_eda.ipynb",
-                "description": "Starter exploratory notebook demonstrating loading, invariants, plots, and image-text previews.",
-            },
-        ],
+        "resources": root_resources,
+        "data": data_entries,
     }
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
 
@@ -382,8 +401,10 @@ def main() -> int:
             print(f"release image links {index}/{len(rows)}", flush=True)
 
     shutil.copy2(args.metadata, args.output_dir / "metadata.parquet")
-    _write_csv(args.output_dir / "metadata.csv", rows)
-    with (args.output_dir / "captions.jsonl").open("w", encoding="utf-8", newline="\n") as stream:
+    exports_dir = args.output_dir / "exports"
+    exports_dir.mkdir(parents=True)
+    _write_csv(exports_dir / "metadata.csv", rows)
+    with (exports_dir / "captions.jsonl").open("w", encoding="utf-8", newline="\n") as stream:
         for row in rows:
             payload = {
                 "image_id": row["image_id"],
@@ -394,7 +415,7 @@ def main() -> int:
             }
             stream.write(json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n")
     _write_csv(
-        args.output_dir / "splits.csv",
+        exports_dir / "splits.csv",
         rows,
         ["image_id", "object_id", "file_name", "category", "split"],
     )
@@ -402,53 +423,23 @@ def main() -> int:
     starter_dir = args.output_dir / "starter_5k"
     starter_dir.mkdir(parents=True)
     shutil.copy2(args.starter, starter_dir / "metadata.parquet")
-    _write_csv(starter_dir / "metadata.csv", starter_rows)
-    _write_csv(
-        starter_dir / "splits.csv",
-        starter_rows,
-        ["image_id", "object_id", "file_name", "category", "split"],
-    )
-    with (starter_dir / "captions.jsonl").open("w", encoding="utf-8", newline="\n") as stream:
-        for row in starter_rows:
-            stream.write(
-                json.dumps(
-                    {
-                        "image_id": row["image_id"],
-                        "file_name": row["file_name"],
-                        "object_id": row["object_id"],
-                        "model_text": row["model_text"],
-                        "text_source": row["text_source"],
-                    },
-                    ensure_ascii=False,
-                    separators=(",", ":"),
-                )
-                + "\n"
-            )
     for row in starter_rows:
         source = release_images / str(row["file_name"])
         _link_or_copy(source, starter_dir / "images" / str(row["file_name"]))
 
+    docs_dir = args.output_dir / "docs"
+    docs_dir.mkdir(parents=True)
     for source_name in (
         "SOURCES.md",
         "RIGHTS_POLICY.md",
         "DATA_DICTIONARY.md",
         "COLLECTION_REPORT.md",
-        "KAGGLE_PAGE.md",
         "DISTRIBUTION.md",
     ):
-        shutil.copy2(ROOT / "docs" / source_name, args.output_dir / source_name)
-    for source_name in ("dataset-cover-image.jpg", "cover_grid_manifest.json"):
-        source = ROOT / "docs" / source_name
-        if source.is_file():
-            shutil.copy2(source, args.output_dir / source_name)
-    example_notebooks = [ROOT / "notebooks" / "starter_eda.ipynb"]
-    if args.include_clip_embeddings:
-        example_notebooks.append(ROOT / "notebooks" / "search_25k_museum_images.ipynb")
-    examples_dir = args.output_dir / "examples"
-    for example_notebook in example_notebooks:
-        if example_notebook.is_file():
-            examples_dir.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(example_notebook, examples_dir / example_notebook.name)
+        shutil.copy2(ROOT / "docs" / source_name, docs_dir / source_name)
+    cover_source = ROOT / "docs" / "dataset-cover-image.jpg"
+    if cover_source.is_file():
+        shutil.copy2(cover_source, args.output_dir / "dataset-cover-image.jpg")
     if args.snapshot_manifest.is_file():
         provenance_dir = args.output_dir / "provenance"
         provenance_dir.mkdir(parents=True, exist_ok=True)
@@ -466,11 +457,6 @@ def main() -> int:
             clip_manifest = _load_json(args.clip_embeddings_manifest)
     _write_readme(args.output_dir / "README.md", final_count=len(rows), starter_count=len(starter_rows))
     kaggle_description = (ROOT / "docs" / "KAGGLE_PAGE.md").read_text(encoding="utf-8")
-    _write_kaggle_metadata(
-        args.output_dir / "dataset-metadata.json",
-        description=kaggle_description,
-        metadata_path=args.metadata,
-    )
 
     image_bytes = sum((release_images / str(row["file_name"])).stat().st_size for row in rows)
     starter_image_bytes = sum(
@@ -482,7 +468,9 @@ def main() -> int:
     non_image_bytes = sum(
         path.stat().st_size
         for path in args.output_dir.rglob("*")
-        if path.is_file() and "images" not in path.parts
+        if path.is_file()
+        and "images" not in path.parts
+        and path.name not in KAGGLE_CONTROL_FILES
     )
     discovery_report = _load_json(args.discovery_report)
     sampling_report = _load_json(args.sampling_report)
@@ -490,7 +478,7 @@ def main() -> int:
     qa_report = _load_json(args.qa_report)
     eligibility = discovery_report.get("eligibility_status") or {}
     manifest = {
-        "dataset_version": "1.0.1",
+        "dataset_version": "1.1.0",
         "created_at_utc": datetime.now(timezone.utc).isoformat(),
         "candidate_count": discovery_report.get("rows"),
         "eligible_count": eligibility.get("eligible"),
@@ -537,10 +525,12 @@ def main() -> int:
             if args.include_clip_embeddings and args.clip_embeddings.is_file()
             else {"included": False}
         ),
-        "checksums_file": "checksums.sha256",
+        "checksums_file": "provenance/checksums.sha256",
     }
-    manifest_path = args.output_dir / "release_manifest.json"
-    checksum_path = args.output_dir / "checksums.sha256"
+    provenance_dir = args.output_dir / "provenance"
+    provenance_dir.mkdir(parents=True, exist_ok=True)
+    manifest_path = provenance_dir / "release_manifest.json"
+    checksum_path = provenance_dir / "checksums.sha256"
     manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
 
     # The checksum file is excluded from its own hash list, and each checksum line has a fixed-size
@@ -550,7 +540,9 @@ def main() -> int:
         checksum_targets = sorted(
             path
             for path in args.output_dir.rglob("*")
-            if path.is_file() and path != checksum_path
+            if path.is_file()
+            and path != checksum_path
+            and path.name not in KAGGLE_CONTROL_FILES
         )
         pre_checksum_bytes = sum(path.stat().st_size for path in checksum_targets)
         predicted_checksum_bytes = _predicted_checksum_bytes(args.output_dir, checksum_targets)
@@ -571,7 +563,9 @@ def main() -> int:
     checksum_targets = sorted(
         path
         for path in args.output_dir.rglob("*")
-        if path.is_file() and path != checksum_path
+        if path.is_file()
+        and path != checksum_path
+        and path.name not in KAGGLE_CONTROL_FILES
     )
     with checksum_path.open("w", encoding="ascii", newline="\n") as stream:
         for index, path in enumerate(checksum_targets, 1):
@@ -580,13 +574,22 @@ def main() -> int:
                 print(f"checksums {index}/{len(checksum_targets)}", flush=True)
 
     actual_release_bytes = sum(
-        path.stat().st_size for path in args.output_dir.rglob("*") if path.is_file()
+        path.stat().st_size
+        for path in args.output_dir.rglob("*")
+        if path.is_file() and path.name not in KAGGLE_CONTROL_FILES
     )
     if actual_release_bytes != manifest["apparent_release_bytes"]:
         raise RuntimeError(
             "Final release byte count differs from manifest: "
             f"actual={actual_release_bytes} manifest={manifest['apparent_release_bytes']}"
         )
+
+    _write_kaggle_metadata(
+        args.output_dir / "dataset-metadata.json",
+        description=kaggle_description,
+        metadata_path=args.metadata,
+        release_root=args.output_dir,
+    )
 
     print(json.dumps(manifest, indent=2, ensure_ascii=False))
     return 0

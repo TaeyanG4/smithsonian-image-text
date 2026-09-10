@@ -29,18 +29,16 @@ minimum resolution gate.
 
 ## What is included
 
-- `images/` — 24,972 normalized JPEGs (uploaded through the Kaggle CLI as `images.zip`).
-- `metadata.parquet` — canonical full metadata; recommended table for analysis/training.
-- `metadata.csv` — convenience export of the same rows.
-- `captions.jsonl` — image ID, filename, object ID, and deterministic `model_text`.
-- `splits.csv` — leakage-safe train/validation/test assignments.
-- `starter_5k/` — balanced 5,000-image subset with the same schema and inherited split (Kaggle upload:
-  `starter_5k.zip`).
-- `SOURCES.md`, `RIGHTS_POLICY.md`, `DATA_DICTIONARY.md`, `COLLECTION_REPORT.md` — provenance and
-  methodology.
-- `provenance/local_snapshot_manifest.json` — hashes pinning the local metadata snapshot used for V1.
-- `checksums.sha256` — release-file checksums.
-- `examples/starter_eda.ipynb` — starter exploration notebook.
+- `metadata.parquet` — canonical full metadata; this is the recommended table for analysis/training.
+- `images/` — 24,972 normalized JPEGs.
+- `starter_5k/` — balanced 5,000-image subset with its canonical Parquet metadata and images.
+- `exports/` — optional CSV, JSONL, and split convenience exports derived from the canonical Parquet.
+- `docs/` — data dictionary, source, rights, distribution, and collection-QA documentation.
+- `provenance/` — release manifest, checksums, and the pinned source-snapshot manifest.
+
+The Kaggle root is intentionally kept small so the canonical table and images are immediately visible;
+supporting documents and redundant convenience exports are grouped into folders instead of competing
+with the primary data files in Data Explorer.
 
 Model-derived embeddings are deliberately **not included in the base V1 download**. They are treated
 as a separately versioned side artifact so the canonical image/metadata dataset stays lightweight,
@@ -52,7 +50,7 @@ For tabular work, start with `metadata.parquet`. Join an image with its row usin
 `model_text` as a compact text input and preserve `object_id` whenever you resample or evaluate so
 multiple views of the same museum object remain grouped.
 
-The included starter notebook demonstrates loading the Kaggle ZIP layout, checking the CC0 and split
+The public Kaggle starter notebook demonstrates loading the dataset, checking the CC0 and split
 invariants, plotting category counts, and previewing image-text pairs. The balanced `starter_5k` subset
 is intended for quick EDA and prototyping before moving to all 24,972 rows.
 
@@ -112,8 +110,8 @@ Automatic inclusion requires:
 CC0 addresses copyright. It does not automatically resolve privacy, publicity, trademark, cultural,
 ethical, or other non-copyright considerations. The build uses conservative review rules and excludes
 ambiguous/sensitive-review rows from automatic release, but downstream users remain responsible for
-their own use context. See `RIGHTS_POLICY.md` and `SOURCES.md` for the exact policy and official source
-links.
+their own use context. See `docs/RIGHTS_POLICY.md` and `docs/SOURCES.md` for the exact policy and
+official source links.
 
 ## Source and provenance
 
