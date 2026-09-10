@@ -8,8 +8,11 @@ the source of truth, validates the exact live file/column layout for the latest
 READY dataset version (or a version selected explicitly), and can submit the
 same metadata shape used by Kaggle's web application.
 
-The default mode is read-only. Pass ``--apply`` to attempt the authenticated
-Data Explorer write. No browser automation is used.
+The default mode is read-only. Pass ``--apply`` to attempt the API-token
+authenticated Data Explorer write, or ``--browser-script`` to emit a
+same-origin JavaScript batch that can be run from an already authenticated
+Kaggle dataset page. The generated JavaScript contains no credentials; it uses
+the page's own session and anti-forgery cookies at runtime.
 """
 
 from __future__ import annotations
@@ -28,6 +31,7 @@ import requests
 ROOT = Path(__file__).resolve().parents[1]
 METADATA_PATH = ROOT / "data" / "release" / "museum-images" / "dataset-metadata.json"
 AUDIT_PATH = ROOT / "tmp_research" / "kaggle_usability_audit.json"
+BROWSER_SCRIPT_PATH = ROOT / "tmp_research" / "kaggle_usability_browser_sync.js"
 
 OWNER = "taeyangg4"
 DATASET_SLUG = "smithsonian-25k-museum-image-text"
@@ -510,6 +514,52 @@ def authenticated_session() -> requests.Session:
     return session
 
 
+def build_browser_script(plan: list[dict[str, Any]]) -> str:
+    """Build a credential-free same-origin Data Explorer synchronization script.
+
+    Kaggle's web client authenticates this internal mutation with the logged-in
+    browser session plus the JavaScript-readable XSRF/build cookies. The script
+    deliberately never prints those values and never exports browser cookies.
+    """
+
+    updates = json.dumps(plan, ensure_ascii=False, separators=(",", ":"))
+    return f"""(async()=>{{
+const cookieValue=name=>{{
+  const item=document.cookie.split('; ').find(value=>value.startsWith(name+'='));
+  return item?decodeURIComponent(item.slice(name.length+1)):'';
+}};
+const xsrf=cookieValue('XSRF-TOKEN');
+if(!xsrf) throw new Error('Kaggle XSRF-TOKEN is unavailable; sign in and reload the dataset page.');
+const headers={{
+  'X-XSRF-TOKEN':xsrf,
+  'X-Kaggle-Build-Version':cookieValue('build-hash'),
+  'Content-Type':'application/json',
+  'Accept':'application/json'
+}};
+const updates={updates};
+let completed=0;
+for(const update of updates){{
+  const response=await fetch('{UPDATE_DATABUNDLE_METADATA_EXTERNAL}',{{
+    method:'POST',
+    credentials:'same-origin',
+    headers,
+    body:JSON.stringify(update)
+  }});
+  const body=await response.text();
+  const name=update.firestorePath.split('/').pop();
+  if(!response.ok){{
+    console.error('Kaggle metadata update failed',name,response.status,body);
+    throw new Error(`${{name}}: HTTP ${{response.status}}`);
+  }}
+  completed+=1;
+  console.log('Kaggle metadata updated',name,response.status);
+  await new Promise(resolve=>setTimeout(resolve,200));
+}}
+console.log('Kaggle metadata batch complete',completed);
+}})();
+"""
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -522,6 +572,16 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Attempt authenticated Data Explorer metadata writes after validation.",
     )
+    parser.add_argument(
+        "--browser-script",
+        nargs="?",
+        const=BROWSER_SCRIPT_PATH,
+        type=Path,
+        help=(
+            "Write a credential-free same-origin browser-console batch script. "
+            "With no path, writes tmp_research/kaggle_usability_browser_sync.js."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -532,9 +592,16 @@ def main() -> int:
     context = load_live_context(public, version_number=version_number)
     plan = build_update_plan(public, context)
     before = get_coverage(public, context)
+    usability = get_usability(public)
     report: dict[str, Any] = {
         "dataset": DATASET_REF,
-        "mode": "apply" if args.apply else "dry-run",
+        "mode": (
+            "apply"
+            if args.apply
+            else "browser-script"
+            if args.browser_script is not None
+            else "dry-run"
+        ),
         "context": {
             "dataset_id": context.dataset_id,
             "dataset_version_id": context.dataset_version_id,
@@ -546,10 +613,21 @@ def main() -> int:
             "columns": sum(len(item["columns"]) for item in plan),
         },
         "coverage_before": before,
-        "usability_before": get_usability(public),
+        "usability_before": usability,
+        "usability_read_model_stale": bool(
+            before["metadata_complete"] and float(usability.get("score", 0) or 0) < 1.0
+        ),
     }
 
     exit_code = 0
+    if args.browser_script is not None:
+        browser_script_path = args.browser_script
+        if not browser_script_path.is_absolute():
+            browser_script_path = ROOT / browser_script_path
+        browser_script_path.parent.mkdir(parents=True, exist_ok=True)
+        browser_script_path.write_text(build_browser_script(plan), encoding="utf-8")
+        report["browser_script"] = str(browser_script_path)
+
     if args.apply:
         authenticated = authenticated_session()
         try:
