@@ -228,14 +228,6 @@ def _write_kaggle_metadata(path: Path, *, description: str, metadata_path: Path)
                 "schema": {"fields": split_schema},
             },
             {
-                "path": "images.zip",
-                "description": "24,972 normalized JPEGs, maximum side 512 px, keyed by file_name.",
-            },
-            {
-                "path": "starter_5k.zip",
-                "description": "Balanced 5,000-image quick-start subset with matching metadata and splits.",
-            },
-            {
                 "path": "README.md",
                 "description": "Release overview and quick file guide.",
             },
