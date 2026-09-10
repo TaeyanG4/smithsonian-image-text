@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Build a deterministic 3x3 Kaggle cover banner from final release images."""
+"""Build a deterministic Kaggle-native cover from final release images.
+
+Kaggle's current dataset metadata uploader submits two fixed crop rectangles for
+the cover asset: a 560x280 header from the top-left and a 280x280 thumbnail
+starting at x=140, y=0.  Rendering the canonical asset at exactly 560x280 keeps
+the banner lossless and lets us deliberately compose the central square so the
+dataset card thumbnail is useful instead of showing an accidental partial tile.
+"""
 
 from __future__ import annotations
 
@@ -11,7 +18,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
-from PIL import Image, ImageDraw, ImageFont, ImageOps
+from PIL import Image, ImageOps
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -27,6 +34,20 @@ PROMPTS = {
     "Coins / Stamps / Documents": "a postage stamp or historical document",
     "Other Objects": "an interesting museum object",
 }
+
+# Eight representative categories are arranged so the middle four tiles live
+# entirely inside Kaggle's 280x280 thumbnail crop (x=140..420).  The remaining
+# four fill the two 140px side rails visible only in the 2:1 header.
+COVER_LAYOUT = [
+    ("Historical Objects", (0, 0, 140, 140)),
+    ("Archaeology", (0, 140, 140, 280)),
+    ("Art", (140, 0, 280, 140)),
+    ("Natural History", (280, 0, 420, 140)),
+    ("Science & Technology", (140, 140, 280, 280)),
+    ("Space & Aviation", (280, 140, 420, 280)),
+    ("Decorative Arts / Design", (420, 0, 560, 140)),
+    ("Coins / Stamps / Documents", (420, 140, 560, 280)),
+]
 
 
 def _load_embeddings(path: Path) -> tuple[np.ndarray, np.ndarray]:
@@ -64,8 +85,6 @@ def main() -> int:
     parser.add_argument(
         "--manifest", type=Path, default=ROOT / "docs" / "cover_grid_manifest.json"
     )
-    parser.add_argument("--tile-width", type=int, default=420)
-    parser.add_argument("--tile-height", type=int, default=180)
     args = parser.parse_args()
 
     try:
@@ -93,7 +112,10 @@ def main() -> int:
     id_to_position = {int(image_id): i for i, image_id in enumerate(image_ids)}
     chosen: list[dict] = []
     used_objects: set[str] = set()
-    for query_index, category in enumerate(PROMPTS):
+    prompt_categories = list(PROMPTS)
+    query_index_by_category = {category: index for index, category in enumerate(prompt_categories)}
+    for category, _rect in COVER_LAYOUT:
+        query_index = query_index_by_category[category]
         subset = metadata[metadata["category"] == category]
         positions: list[int] = []
         candidate_ids: list[int] = []
@@ -125,26 +147,19 @@ def main() -> int:
             }
         )
 
-    tile_width = args.tile_width
-    tile_height = args.tile_height
-    label_height = 30
-    canvas = Image.new(
-        "RGB", (tile_width * 3, (tile_height + label_height) * 3), "white"
-    )
-    font = ImageFont.load_default(size=16)
-    for index, item in enumerate(chosen):
+    canvas = Image.new("RGB", (560, 280), "white")
+    for item, (_category, rect) in zip(chosen, COVER_LAYOUT, strict=True):
         source_path = args.image_dir / item["file_name"]
+        x0, y0, x1, y1 = rect
+        tile_width = x1 - x0
+        tile_height = y1 - y0
         with Image.open(source_path) as source:
             image = ImageOps.fit(
                 source.convert("RGB"),
                 (tile_width, tile_height),
                 method=Image.Resampling.LANCZOS,
             )
-        x = (index % 3) * tile_width
-        y = (index // 3) * (tile_height + label_height)
-        canvas.paste(image, (x, y))
-        draw = ImageDraw.Draw(canvas)
-        draw.text((x + 8, y + tile_height + 6), item["category"], fill="black", font=font)
+        canvas.paste(image, (x0, y0))
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.manifest.parent.mkdir(parents=True, exist_ok=True)
@@ -152,7 +167,17 @@ def main() -> int:
     args.manifest.write_text(
         json.dumps(
             {
-                "purpose": "Kaggle dataset cover banner (2:1 target crop)",
+                "purpose": "Kaggle dataset cover rendered at native crop geometry",
+                "kaggle_header_crop": {"left": 0, "top": 0, "width": 560, "height": 280},
+                "kaggle_thumbnail_crop": {
+                    "left": 140,
+                    "top": 0,
+                    "width": 280,
+                    "height": 280,
+                },
+                "layout": [
+                    {"category": category, "rect": list(rect)} for category, rect in COVER_LAYOUT
+                ],
                 "model_id": model_id,
                 "model_revision": revision,
                 "selection": chosen,

@@ -209,31 +209,24 @@ def _write_kaggle_metadata(path: Path, *, description: str, metadata_path: Path)
         ),
         "resources": [
             {
-                "path": "metadata.parquet",
-                "description": "Canonical metadata table for all 24,972 released image rows.",
-                "schema": {"fields": metadata_schema},
-            },
-            {
-                "path": "metadata.csv",
-                "description": "CSV convenience export with the same rows and columns as metadata.parquet.",
-                "schema": {"fields": metadata_schema},
-            },
-            {
-                "path": "captions.jsonl",
-                "description": "Compact image_id/file_name/object_id plus deterministic Smithsonian model_text.",
-            },
-            {
-                "path": "splits.csv",
-                "description": "Object-level leakage-safe train/validation/test assignments.",
-                "schema": {"fields": split_schema},
-            },
-            {
-                "path": "README.md",
-                "description": "Release overview and quick file guide.",
+                "path": "COLLECTION_REPORT.md",
+                "description": "Collection QA summary with final counts, exclusions, and category coverage.",
             },
             {
                 "path": "DATA_DICTIONARY.md",
                 "description": "Detailed field definitions and source/derivation notes.",
+            },
+            {
+                "path": "DISTRIBUTION.md",
+                "description": "Distribution notes for categories, institutions, splits, and other release statistics.",
+            },
+            {
+                "path": "KAGGLE_PAGE.md",
+                "description": "Long-form Kaggle data card source used to describe this release.",
+            },
+            {
+                "path": "README.md",
+                "description": "Release overview and quick file guide.",
             },
             {
                 "path": "RIGHTS_POLICY.md",
@@ -242,6 +235,37 @@ def _write_kaggle_metadata(path: Path, *, description: str, metadata_path: Path)
             {
                 "path": "SOURCES.md",
                 "description": "Official Smithsonian source and provenance documentation.",
+            },
+            {
+                "path": "captions.jsonl",
+                "description": "Compact image_id/file_name/object_id plus deterministic Smithsonian model_text.",
+            },
+            {
+                "path": "checksums.sha256",
+                "description": "SHA-256 checksums for release files used to verify downloaded bytes.",
+            },
+            {
+                "path": "cover_grid_manifest.json",
+                "description": "Manifest of the representative images and crop geometry used for the Kaggle cover.",
+            },
+            {
+                "path": "metadata.csv",
+                "description": "CSV convenience export with the same rows and columns as metadata.parquet.",
+                "schema": {"fields": metadata_schema},
+            },
+            {
+                "path": "metadata.parquet",
+                "description": "Canonical metadata table for all 24,972 released image rows.",
+                "schema": {"fields": metadata_schema},
+            },
+            {
+                "path": "release_manifest.json",
+                "description": "Machine-readable release manifest recording counts, sizes, hashes, and build provenance.",
+            },
+            {
+                "path": "splits.csv",
+                "description": "Object-level leakage-safe train/validation/test assignments.",
+                "schema": {"fields": split_schema},
             },
         ],
     }
@@ -435,7 +459,7 @@ def main() -> int:
     qa_report = _load_json(args.qa_report)
     eligibility = discovery_report.get("eligibility_status") or {}
     manifest = {
-        "dataset_version": "1.0.0",
+        "dataset_version": "1.0.1",
         "created_at_utc": datetime.now(timezone.utc).isoformat(),
         "candidate_count": discovery_report.get("rows"),
         "eligible_count": eligibility.get("eligible"),
@@ -503,7 +527,10 @@ def main() -> int:
         if manifest["apparent_release_bytes"] == final_release_bytes:
             break
         manifest["apparent_release_bytes"] = final_release_bytes
-        manifest["apparent_release_gb"] = final_release_bytes / 1_000_000_000
+        # Keep the human-readable GB value at stable precision.  Serializing the
+        # full float can change release_manifest.json by one byte as the exact
+        # byte-count field converges, producing a two-value fixed-point cycle.
+        manifest["apparent_release_gb"] = round(final_release_bytes / 1_000_000_000, 6)
         manifest_path.write_text(
             json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
         )

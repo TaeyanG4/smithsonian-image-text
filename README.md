@@ -19,9 +19,9 @@ Reproducible tooling for a rights-audited Smithsonian Open Access image-text dat
 
 The local V1 build has progressed through discovery, filtering, balanced selection, the mandatory
 1K image pilot, production collection, image QA, deterministic text composition, object-level
-splitting, the 5K starter subset, and final release validation. Publication metadata, a Kaggle-ready
-cover, and a starter notebook are maintained in the repository; external publication remains an
-explicit release action.
+splitting, the 5K starter subset, and final release validation. The public Kaggle V1 dataset and
+starter notebook are live; publication metadata, the Kaggle-native cover, and maintenance tooling
+are kept reproducible in this repository.
 
 Current build summary (2026-09-10):
 
@@ -55,6 +55,7 @@ Important findings and decisions are documented in:
 - `docs/SCHEMA_RESEARCH.md`
 - `docs/DISCOVERY_STRATEGY.md`
 - `docs/DISTRIBUTION.md`
+- `docs/KAGGLE_PUBLISHING.md`
 
 Machine-readable controls live in `config/collection.yaml` and `config/eligibility_rules.yaml`.
 

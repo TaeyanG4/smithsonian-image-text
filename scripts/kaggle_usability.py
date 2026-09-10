@@ -1,0 +1,509 @@
+#!/usr/bin/env python3
+"""Audit and, when authorized, synchronize Kaggle Data Explorer descriptions.
+
+The ordinary Kaggle dataset metadata update persists dataset-level metadata but
+does not currently populate the analyzed Data Explorer file/column description
+fields used by the Usability score. This tool keeps the repository metadata as
+the source of truth, validates the exact live V1 file/column layout, and can
+submit the same metadata shape used by Kaggle's web application.
+
+The default mode is read-only. Pass ``--apply`` to attempt the authenticated
+Data Explorer write. No browser automation is used.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+import time
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Protocol
+
+import requests
+
+
+ROOT = Path(__file__).resolve().parents[1]
+METADATA_PATH = ROOT / "data" / "release" / "museum-images" / "dataset-metadata.json"
+AUDIT_PATH = ROOT / "tmp_research" / "kaggle_usability_audit.json"
+
+OWNER = "taeyangg4"
+DATASET_SLUG = "smithsonian-25k-museum-image-text"
+DATASET_REF = f"{OWNER}/{DATASET_SLUG}"
+DATASET_ID = 11_974_059
+APPROVED_VERSION = 1
+
+KAGGLE_ORIGIN = "https://www.kaggle.com"
+GET_DATASET_BASICS = "/api/i/datasets.DatasetDetailService/GetDatasetBasics"
+GET_DATASET_USABILITY = "/api/i/datasets.DatasetDetailService/GetDatasetUsabilityRating"
+GET_DATABUNDLE_EXTERNAL = "/api/i/datasets.databundles.DatabundleService/GetDatabundleExternal"
+GET_DATABUNDLE_EXTERNAL_CHILDREN = (
+    "/api/i/datasets.databundles.DatabundleService/GetDatabundleExternalChildren"
+)
+GET_DATABUNDLE_EXTERNAL_COLUMNS = (
+    "/api/i/datasets.databundles.DatabundleService/GetDatabundleExternalColumns"
+)
+GET_DATABUNDLE_EXTERNAL_COLUMNS_BY_PATH = (
+    "/api/i/datasets.databundles.DatabundleService/GetDatabundleExternalColumnsByFirestorePath"
+)
+UPDATE_DATABUNDLE_METADATA_EXTERNAL = (
+    "/api/i/datasets.databundles.DatabundleService/UpdateDatabundleMetadataExternal"
+)
+
+
+class KaggleUsabilityError(RuntimeError):
+    """Raised when live Kaggle state does not match the approved release."""
+
+
+class _Response(Protocol):
+    status_code: int
+    text: str
+
+    def json(self) -> Any: ...
+
+    def raise_for_status(self) -> None: ...
+
+
+class _Session(Protocol):
+    def post(
+        self,
+        url: str,
+        *,
+        json: dict[str, Any],
+        timeout: float,
+    ) -> _Response: ...
+
+
+@dataclass(frozen=True)
+class LiveContext:
+    dataset_id: int
+    dataset_version_id: int
+    databundle_version_id: int
+    version_number: int
+    root_firestore_path: str
+    file_firestore_paths: dict[str, str]
+
+
+def _post_json(
+    session: _Session,
+    endpoint: str,
+    payload: dict[str, Any],
+    *,
+    timeout: float = 30.0,
+) -> dict[str, Any]:
+    response = session.post(
+        f"{KAGGLE_ORIGIN}{endpoint}",
+        json=payload,
+        timeout=timeout,
+    )
+    try:
+        response.raise_for_status()
+    except Exception as exc:
+        body = " ".join((getattr(response, "text", "") or "").split())[:500]
+        detail = f": {body}" if body else ""
+        raise KaggleUsabilityError(
+            f"Kaggle request failed for {endpoint} "
+            f"(HTTP {getattr(response, 'status_code', '?')}){detail}"
+        ) from exc
+    try:
+        value = response.json()
+    except Exception as exc:
+        raise KaggleUsabilityError(f"Kaggle returned non-JSON for {endpoint}") from exc
+    if not isinstance(value, dict):
+        raise KaggleUsabilityError(f"Unexpected Kaggle response for {endpoint}")
+    if int(value.get("code", 0) or 0) >= 400:
+        raise KaggleUsabilityError(
+            f"Kaggle rejected {endpoint}: {value.get('message', 'unknown error')}"
+        )
+    return value
+
+
+def _resources() -> dict[str, dict[str, Any]]:
+    raw = json.loads(METADATA_PATH.read_text(encoding="utf-8"))
+    resources = raw.get("resources") or []
+    result: dict[str, dict[str, Any]] = {}
+    for item in resources:
+        resource = dict(item)
+        path = str(resource.get("path") or "")
+        if not path:
+            raise KaggleUsabilityError("dataset-metadata.json contains a resource without path")
+        if path in result:
+            raise KaggleUsabilityError(f"duplicate resource path: {path}")
+        result[path] = resource
+    return result
+
+
+def _verification(context: LiveContext) -> dict[str, int]:
+    return {
+        "databundleVersionId": context.databundle_version_id,
+        "datasetId": context.dataset_id,
+    }
+
+
+def load_live_context(session: _Session) -> LiveContext:
+    basics = _post_json(
+        session,
+        GET_DATASET_BASICS,
+        {
+            "ownerSlug": OWNER,
+            "datasetSlug": DATASET_SLUG,
+            "datasetVersionNumber": APPROVED_VERSION,
+        },
+    )
+    dataset_id = int(basics.get("datasetId", 0) or 0)
+    version_number = int(basics.get("datasetVersionNumber", 0) or 0)
+    dataset_version_id = int(basics.get("datasetVersionId", 0) or 0)
+    data = basics.get("data")
+    databundle_version_id = int(data.get("versionId", 0) or 0) if isinstance(data, dict) else 0
+    if dataset_id != DATASET_ID:
+        raise KaggleUsabilityError(
+            f"dataset id changed: expected {DATASET_ID}, got {dataset_id}"
+        )
+    if version_number != APPROVED_VERSION:
+        raise KaggleUsabilityError(
+            f"dataset version changed: expected {APPROVED_VERSION}, got {version_number}"
+        )
+    if dataset_version_id <= 0 or databundle_version_id <= 0:
+        raise KaggleUsabilityError("Kaggle version identifiers are incomplete")
+
+    provisional = LiveContext(
+        dataset_id=dataset_id,
+        dataset_version_id=dataset_version_id,
+        databundle_version_id=databundle_version_id,
+        version_number=version_number,
+        root_firestore_path="",
+        file_firestore_paths={},
+    )
+    external = _post_json(
+        session,
+        GET_DATABUNDLE_EXTERNAL,
+        {"verificationInfo": _verification(provisional)},
+    )
+    source = external.get("dataSource")
+    if not isinstance(source, dict):
+        raise KaggleUsabilityError("Kaggle Data Explorer returned no data source")
+    if int(source.get("sourceId", 0) or 0) != DATASET_ID:
+        raise KaggleUsabilityError("Data Explorer dataset id changed")
+    if int(source.get("versionNumber", 0) or 0) != APPROVED_VERSION:
+        raise KaggleUsabilityError("Data Explorer version disagrees with V1")
+    root_path = str(source.get("path") or "")
+    version = source.get("databundleVersion")
+    if not root_path or not isinstance(version, dict):
+        raise KaggleUsabilityError("Data Explorer version tree is incomplete")
+    if int(version.get("legacyEntityId", 0) or 0) != databundle_version_id:
+        raise KaggleUsabilityError("Data Explorer databundle version id changed")
+    version_info = version.get("datasetVersionInfo")
+    if (
+        not isinstance(version_info, dict)
+        or int(version_info.get("datasetVersionId", 0) or 0) != dataset_version_id
+    ):
+        raise KaggleUsabilityError("Data Explorer dataset version id changed")
+
+    # GetDatabundleExternalChildren is the authoritative view for file
+    # descriptions; the nested version tree can omit descriptions.
+    children = _post_json(
+        session,
+        GET_DATABUNDLE_EXTERNAL_CHILDREN,
+        {
+            "verificationInfo": _verification(provisional),
+            "firestorePath": root_path,
+            "offset": 0,
+            "count": 100,
+            "depth": 1,
+        },
+    )
+    files = children.get("files")
+    if not isinstance(files, list):
+        raise KaggleUsabilityError("Data Explorer file listing is unavailable")
+    file_paths = {
+        str(item.get("name") or ""): str(item.get("path") or item.get("firestorePath") or "")
+        for item in files
+        if isinstance(item, dict) and item.get("name")
+    }
+    if any(not value for value in file_paths.values()):
+        raise KaggleUsabilityError("Data Explorer returned a file without Firestore path")
+    expected_files = set(_resources())
+    if set(file_paths) != expected_files:
+        raise KaggleUsabilityError(
+            "live Kaggle file set does not match dataset-metadata.json: "
+            f"expected {sorted(expected_files)}, got {sorted(file_paths)}"
+        )
+
+    return LiveContext(
+        dataset_id=dataset_id,
+        dataset_version_id=dataset_version_id,
+        databundle_version_id=databundle_version_id,
+        version_number=version_number,
+        root_firestore_path=root_path,
+        file_firestore_paths=file_paths,
+    )
+
+
+def _live_columns(
+    session: _Session,
+    context: LiveContext,
+    *,
+    file_path: str,
+) -> list[dict[str, Any]]:
+    verification = _verification(context)
+    base = _post_json(
+        session,
+        GET_DATABUNDLE_EXTERNAL_COLUMNS,
+        {"verificationInfo": verification, "firestorePath": file_path},
+    )
+    columns = base.get("columns")
+    if not isinstance(columns, list):
+        raise KaggleUsabilityError("Kaggle column listing is unavailable")
+    ordered = sorted(
+        (item for item in columns if isinstance(item, dict)),
+        key=lambda item: int(item.get("order", 0) or 0),
+    )
+    paths = [str(item.get("firestorePath") or item.get("path") or "") for item in ordered]
+    if any(not path for path in paths) or len(paths) != len(set(paths)):
+        raise KaggleUsabilityError("Kaggle returned invalid column Firestore paths")
+    hydrated = _post_json(
+        session,
+        GET_DATABUNDLE_EXTERNAL_COLUMNS_BY_PATH,
+        {"verificationInfo": verification, "firestorePaths": paths},
+    )
+    full = hydrated.get("columns")
+    if not isinstance(full, list):
+        raise KaggleUsabilityError("Kaggle hydrated columns are unavailable")
+    by_path = {
+        str(item.get("path") or item.get("firestorePath") or ""): item
+        for item in full
+        if isinstance(item, dict)
+    }
+    if set(by_path) != set(paths):
+        raise KaggleUsabilityError("Kaggle hydrated column paths changed")
+    result: list[dict[str, Any]] = []
+    for item, path in zip(ordered, paths, strict=True):
+        merged = dict(by_path[path])
+        merged["_name"] = str(item.get("name") or merged.get("name") or "")
+        merged["_path"] = path
+        result.append(merged)
+    return result
+
+
+def build_update_plan(session: _Session, context: LiveContext) -> list[dict[str, Any]]:
+    resources = _resources()
+    verification = _verification(context)
+    plan: list[dict[str, Any]] = []
+    for name, resource in resources.items():
+        file_path = context.file_firestore_paths[name]
+        expected_fields = (resource.get("schema") or {}).get("fields") or []
+        column_updates: list[dict[str, Any]] = []
+        if expected_fields:
+            live = _live_columns(session, context, file_path=file_path)
+            live_names = [str(item.get("_name") or "") for item in live]
+            expected_names = [str(item.get("name") or "") for item in expected_fields]
+            if live_names != expected_names:
+                raise KaggleUsabilityError(
+                    f"{name}: column order changed: expected {expected_names}, got {live_names}"
+                )
+            for field, item in zip(expected_fields, live, strict=True):
+                info = item.get("tableColumnInfo")
+                if not isinstance(info, dict):
+                    raise KaggleUsabilityError(
+                        f"{name}/{field['name']}: tableColumnInfo is missing"
+                    )
+                column_updates.append(
+                    {
+                        "firestorePath": str(item["_path"]),
+                        "description": str(field.get("description") or field.get("title") or ""),
+                        # Kaggle's generated UI client restores omitted proto3
+                        # enum defaults before submitting the update.
+                        "type": str(info.get("type") or "STRING"),
+                        "extendedType": str(
+                            info.get("extendedType") or "EXTENDED_DATA_TYPE_UNSPECIFIED"
+                        ),
+                    }
+                )
+        description = str(resource.get("description") or "")
+        if not description:
+            raise KaggleUsabilityError(f"{name}: resource description is empty")
+        plan.append(
+            {
+                "verificationInfo": verification,
+                "firestorePath": file_path,
+                "description": description,
+                "columns": column_updates,
+            }
+        )
+    return plan
+
+
+def get_coverage(session: _Session, context: LiveContext) -> dict[str, Any]:
+    resources = _resources()
+    verification = _verification(context)
+    children = _post_json(
+        session,
+        GET_DATABUNDLE_EXTERNAL_CHILDREN,
+        {
+            "verificationInfo": verification,
+            "firestorePath": context.root_firestore_path,
+            "offset": 0,
+            "count": 100,
+            "depth": 1,
+        },
+    )
+    files = children.get("files")
+    if not isinstance(files, list):
+        raise KaggleUsabilityError("Kaggle file metadata listing is unavailable")
+    live_descriptions = {
+        str(item.get("name") or ""): str(item.get("description") or "")
+        for item in files
+        if isinstance(item, dict) and item.get("name")
+    }
+    if set(live_descriptions) != set(resources):
+        raise KaggleUsabilityError("Kaggle file set changed while checking coverage")
+    exact_files = sum(
+        live_descriptions[name] == str(resource.get("description") or "")
+        for name, resource in resources.items()
+    )
+
+    target_columns = 0
+    exact_columns = 0
+    per_table: dict[str, dict[str, int]] = {}
+    for name, resource in resources.items():
+        fields = (resource.get("schema") or {}).get("fields") or []
+        if not fields:
+            continue
+        live = _live_columns(
+            session,
+            context,
+            file_path=context.file_firestore_paths[name],
+        )
+        expected_names = [str(item.get("name") or "") for item in fields]
+        live_names = [str(item.get("_name") or "") for item in live]
+        if live_names != expected_names:
+            raise KaggleUsabilityError(f"{name}: columns changed during coverage check")
+        exact = 0
+        for item, field in zip(live, fields, strict=True):
+            info = item.get("tableColumnInfo")
+            nested = info.get("description") if isinstance(info, dict) else None
+            live_description = str(item.get("description") or nested or "")
+            if live_description == str(field.get("description") or field.get("title") or ""):
+                exact += 1
+        target_columns += len(fields)
+        exact_columns += exact
+        per_table[name] = {"exact": exact, "target": len(fields)}
+
+    return {
+        "exact_file_descriptions": exact_files,
+        "target_file_descriptions": len(resources),
+        "exact_column_descriptions": exact_columns,
+        "target_column_descriptions": target_columns,
+        "file_descriptions_complete": exact_files == len(resources),
+        "column_descriptions_complete": exact_columns == target_columns,
+        "metadata_complete": exact_files == len(resources) and exact_columns == target_columns,
+        "per_table": per_table,
+    }
+
+
+def get_usability(session: _Session) -> dict[str, Any]:
+    response = _post_json(session, GET_DATASET_USABILITY, {"datasetId": DATASET_ID})
+    rating = response.get("rating")
+    if not isinstance(rating, dict):
+        raise KaggleUsabilityError("Kaggle usability rating is unavailable")
+    return rating
+
+
+def authenticated_session() -> requests.Session:
+    try:
+        from kaggle.api.kaggle_api_extended import KaggleApi
+    except ImportError as exc:
+        raise KaggleUsabilityError("Kaggle CLI package is required") from exc
+    api = KaggleApi()
+    api.authenticate()
+    client = api.build_kaggle_client()
+    http_client = client.http_client()
+    http_client._init_session()
+    session = http_client._session
+    if session is None:
+        raise KaggleUsabilityError("Kaggle CLI did not initialize a session")
+
+    # The Data Explorer mutation lives on www.kaggle.com rather than the
+    # public api.kaggle.com service. Prime the browser-style anti-CSRF token
+    # while retaining the CLI's bearer/API authentication. This still may be
+    # rejected by Kaggle if the endpoint requires a logged-in browser session;
+    # the caller reports that boundary explicitly instead of automating a browser.
+    bootstrap = session.get(KAGGLE_ORIGIN, timeout=30)
+    bootstrap.raise_for_status()
+    xsrf_token = session.cookies.get("XSRF-TOKEN")
+    if xsrf_token:
+        session.headers["X-XSRF-TOKEN"] = xsrf_token
+    return session
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="Attempt authenticated Data Explorer metadata writes after validation.",
+    )
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    public = requests.Session()
+    context = load_live_context(public)
+    plan = build_update_plan(public, context)
+    before = get_coverage(public, context)
+    report: dict[str, Any] = {
+        "dataset": DATASET_REF,
+        "mode": "apply" if args.apply else "dry-run",
+        "context": {
+            "dataset_id": context.dataset_id,
+            "dataset_version_id": context.dataset_version_id,
+            "databundle_version_id": context.databundle_version_id,
+            "version_number": context.version_number,
+        },
+        "plan": {
+            "files": len(plan),
+            "columns": sum(len(item["columns"]) for item in plan),
+        },
+        "coverage_before": before,
+        "usability_before": get_usability(public),
+    }
+
+    exit_code = 0
+    if args.apply:
+        authenticated = authenticated_session()
+        try:
+            for update in plan:
+                _post_json(authenticated, UPDATE_DATABUNDLE_METADATA_EXTERNAL, update)
+        except KaggleUsabilityError as exc:
+            report["apply_error"] = str(exc)
+            exit_code = 3
+        else:
+            after = before
+            for _ in range(8):
+                time.sleep(2)
+                after = get_coverage(requests.Session(), context)
+                if after["metadata_complete"]:
+                    break
+            report["coverage_after"] = after
+            report["usability_after"] = get_usability(requests.Session())
+            if not after["metadata_complete"]:
+                exit_code = 2
+
+    AUDIT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    AUDIT_PATH.write_text(
+        json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    print(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
+    print(f"WROTE {AUDIT_PATH}")
+    return exit_code
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except KaggleUsabilityError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1)
