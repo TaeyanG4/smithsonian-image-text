@@ -9,6 +9,34 @@ project:
   hard_cap_gb: 5.0
   rebuild_target_hours: 8
 
+pilot:
+  images: 1000
+  deterministic_seed: "smithsonian-image-text-v1-pilot"
+  workers: 12
+  request_timeout_seconds: 30
+  max_attempts: 4
+  retry_backoff_seconds: 0.5
+  max_download_bytes: 52428800
+  jpeg_quality: 84
+  phash_size: 8
+  phash_highfreq_factor: 4
+  near_duplicate_hamming_distance: 4
+  min_max_side_px: 256
+
+production:
+  workers: 16
+  checkpoint_every: 100
+
+splitting:
+  seed: "smithsonian-image-text-v1-split"
+  train: 0.8
+  validation: 0.1
+  test: 0.1
+
+starter:
+  seed: "smithsonian-image-text-v1-starter"
+  max_views_per_object: 2
+
 sources:
   bulk_index_url: "https://smithsonian-open-access.s3-us-west-2.amazonaws.com/metadata/edan/index.txt"
   api_base_url: "https://api.si.edu/openaccess/api/v1.0"
@@ -22,6 +50,27 @@ metadata_discovery:
   max_shards_per_unit: 64
   request_timeout_seconds: 60
   max_candidates_per_unit: 12000
+  # Phase 2 discovery caps are intentionally not final category quotas. They
+  # prevent a handful of very high-yield natural-history units from consuming
+  # the full 80K pool while still allowing sparse museums to scan more shards.
+  unit_candidate_caps:
+    CHNDM: 12000
+    FSG: 3000
+    HMSG: 1000
+    SAAM: 4000
+    NMAH: 10000
+    NASM: 1500
+    NPM: 5000
+    HAC: 1000
+    NZP: 1000
+    NMNHPALEO: 10000
+    NMNHMINSCI: 8000
+    NMNHBIRDS: 10000
+    NMNHMAMMALS: 10000
+    NMNHENTO: 10000
+    NMNHFISHES: 5000
+    NMNHBOTANY: 10000
+    NMNHEDUCATION: 3000
   smoke_units:
     - CHNDM
     - FSG

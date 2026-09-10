@@ -1,4 +1,10 @@
-from smithsonian_image_text.discovery import deterministic_shard_order
+import pytest
+
+from smithsonian_image_text.discovery import (
+    deterministic_shard_order,
+    effective_unit_caps,
+    normalize_units,
+)
 from smithsonian_image_text.schema import (
     iter_canonical_candidates,
     preferred_ids_derivative_url,
@@ -42,6 +48,29 @@ def test_shard_order_is_deterministic():
     second = deterministic_shard_order(urls, seed="v1", unit_code="NMAH")
     assert first == second
     assert sorted(first) == sorted(urls)
+
+
+def test_normalize_units_deduplicates_and_preserves_order():
+    assert normalize_units(["nmah", "NASM", "NMAH"], ["NMAH", "NASM"]) == ["NMAH", "NASM"]
+
+
+def test_normalize_units_rejects_unknown_unit():
+    with pytest.raises(ValueError, match="UNKNOWN"):
+        normalize_units(["NMAH", "UNKNOWN"], ["NMAH"])
+
+
+def test_effective_unit_caps_respects_cli_global_cap():
+    caps = effective_unit_caps(
+        ["NMAH", "FSG"], max_per_unit=50, configured_caps={"NMAH": 10_000, "FSG": 20}
+    )
+    assert caps == {"NMAH": 50, "FSG": 20}
+
+
+def test_effective_unit_caps_rejects_nonpositive_values():
+    with pytest.raises(ValueError, match="positive"):
+        effective_unit_caps(["NMAH"], max_per_unit=0)
+    with pytest.raises(ValueError, match="NMAH"):
+        effective_unit_caps(["NMAH"], max_per_unit=50, configured_caps={"NMAH": 0})
 
 
 def test_canonical_candidate_requires_media_level_cc0():

@@ -50,8 +50,8 @@ A naive global sample will be dominated by very large natural-history units. Ins
    postal material, natural history, gardens/zoo, etc.
 3. Deterministically permute each unit's 256 shard URLs with a fixed seed.
 4. Scan units round-robin so one giant unit cannot consume the entire target first.
-5. Apply a soft equal opportunity share, followed by a relaxed per-unit cap when sparse units cannot
-   fill their share.
+5. Apply explicit per-unit discovery caps tuned from the metadata-only yield calibration. This avoids
+   a soft-cap/two-pass scheduler dropping the unconsumed tail of a shard.
 6. Stop when the global media-candidate target is satisfied, not after downloading every unit.
 
 The current code uses seed:
@@ -60,8 +60,9 @@ The current code uses seed:
 smithsonian-image-text-v1
 ```
 
-and an initial maximum of 12,000 candidate rows per unit. These are discovery guardrails, not final
-Phase 4 category quotas.
+and a global maximum of 12,000 candidate rows per unit, with lower unit-specific caps for several
+high-yield or sparse units. A CLI `--max-per-unit` value is a true hard upper bound over those configured
+caps. These are discovery guardrails, not final Phase 4 category quotas.
 
 The CLI deliberately defaults to only the configured `smoke_units`. A large scan requires explicit
 `--all-preferred-units` (or an explicit `--units ...` list), so a casual smoke command cannot silently
@@ -130,14 +131,20 @@ Do not archive every scanned Smithsonian record or every 42M+ object locally. Fo
 Phase 2 should preserve raw JSON for records that produced candidate rows (and optionally rejected
 near-candidates needed for audits), compressed under `data/raw_metadata/`.
 
-A practical layout is:
+A V1 run-level layout is used rather than mirroring every upstream shard as a local file:
 
 ```text
-data/raw_metadata/<unit>/<source-shard>.candidate-records.ndjson.gz
+data/raw_metadata/phase2_candidate_records.ndjson.gz
+data/raw_metadata/phase2_candidate_records_extension_32_63.ndjson.gz
+data/raw_metadata/phase2_candidate_records_extension_64_127.ndjson.gz
 ```
 
-Also write a small discovery manifest containing source shard URL/hash/HTTP metadata and counts. The
-bulk source itself remains the canonical upstream archive.
+Each line wraps the untouched source record with `source_unit` and `source_shard_url`. The completed
+large V1 scans predated per-shard hash capture; their source shard URLs are retained and all
+candidate-producing raw records are preserved. `data/audits/local_snapshot_manifest.json` pins those
+raw files and canonical outputs by SHA256. New discovery runs additionally record top/unit index and
+downloaded shard URL, ETag/Last-Modified, byte count, and SHA256 in a source manifest. The bulk source
+itself remains the canonical upstream archive.
 
 ## Canonical output
 
@@ -151,9 +158,9 @@ Recommended auxiliary audits:
 
 ```text
 data/audits/discovery_report.json
-data/audits/source_manifest.json
-data/audits/schema_drift.json
-data/audits/media_hosts.json
+data/audits/*_source_manifest.json
+data/audits/local_snapshot_manifest.json
+data/audits/shared_media_across_objects.csv
 ```
 
 The Parquet table should be media-level. Report unique object counts separately.
@@ -188,14 +195,17 @@ record metadata_usage.access
 The implementation foundation already supports deterministic, metadata-only round-robin streaming.
 A full Phase 2 run should proceed in checkpoints:
 
-1. **Schema smoke:** hundreds of rows across representative units — already completed in Phase 1.
-2. **Yield calibration:** a few deterministic shards per preferred unit; measure bytes/records/CC0
-   media rows per shard.
-3. **Adaptive metadata scan:** expand only underfilled units until the candidate target/diversity
-   criteria are met.
-4. **Canonicalize + filter:** materialize candidate/rejected/review tables with reason codes.
-5. **Distribution gate:** review category/institution/text distributions before selecting the 1K image
-   pilot.
+1. **Schema smoke:** hundreds of rows across representative units — completed in Phase 1.
+2. **Yield calibration:** one deterministic shard from each preferred unit showed severe natural-history
+   dominance in an unconstrained pool.
+3. **Adaptive metadata scan:** a 32-shard broad scan plus two offset extensions for sparse art/history/
+   space units produced **97,718** merged media-level candidates, within the 50K-100K design range.
+4. **Canonicalize + filter:** **90,451 eligible**, **639 review-required**, **6,628 rejected** after the
+   final merged-table build. Cross-object shared media URLs are rejected automatically because the
+   image-to-object text alignment is ambiguous.
+5. **Distribution gate:** deterministic category sampling selected exactly **25,000 rows / 18,321
+   unique objects**, with at most four views per object and at most 6,250 rows from one institution.
 
-At the end of Phase 2/3, the next network-heavy step is still only the **1K image pilot**, never the
-full 25K download.
+The Phase 5 1K pilot was subsequently completed before production: 1,000/1,000 HTTP/decode successes,
+0 exact duplicates, mean final JPEG 30.7 KB, and a projected 25K package of about 0.776 GB. That passed
+the <=4 GB package-size gate and authorized Phase 6 production collection.

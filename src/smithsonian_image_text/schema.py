@@ -66,6 +66,15 @@ def _join(values: Iterable[str]) -> str | None:
     return "; ".join(unique) if unique else None
 
 
+def _int_or_none(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def descriptive(record: Mapping[str, Any]) -> Mapping[str, Any]:
     return (record.get("content") or {}).get("descriptiveNonRepeating") or {}
 
@@ -220,11 +229,18 @@ def canonical_candidate(
         "media_description": clean_text(media.get("extDescrAccessibility")),
         "record_type": clean_text(record.get("type")),
         "record_hash": clean_text(record.get("hash")),
-        "record_timestamp": record.get("timestamp"),
-        "record_last_updated": record.get("lastTimeUpdated"),
+        "record_timestamp": _int_or_none(record.get("timestamp")),
+        "record_last_updated": _int_or_none(record.get("lastTimeUpdated")),
         "raw_category": _join(usage_flags),
+        "highres_jpeg_url": None,
+        "screen_url": None,
+        "thumbnail_resource_url": None,
+        "source_width": None,
+        "source_height": None,
     }
     row.update(_media_resource_map(media))
+    row["source_width"] = _int_or_none(row.get("source_width"))
+    row["source_height"] = _int_or_none(row.get("source_height"))
     return row
 
 

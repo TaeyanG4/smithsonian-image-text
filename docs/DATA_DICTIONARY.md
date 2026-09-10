@@ -50,20 +50,60 @@ deduplication/splitting; `media_id` identifies the individual view.
 | `record_hash` | Bulk record hash | top-level `hash` |
 | `record_timestamp` | Source record timestamp | top-level `timestamp` |
 | `record_last_updated` | Source update timestamp | top-level `lastTimeUpdated` |
+| `source_shard_url` | Official bulk shard that yielded the candidate | discovery provenance added during Phase 2 |
+| `eligibility_status` | `eligible`, `review_required`, or `rejected` | deterministic Phase 3 policy result |
+| `eligibility_reasons` | Pipe-delimited policy reason codes when applicable | deterministic Phase 3 policy result |
 
-## Fields intentionally deferred
+## Selection fields added in Phase 4
 
-The following belong to later phases and are not fabricated during Phase 1:
+`selected_candidates.parquet` adds fields that are deterministic derivatives of authoritative metadata:
 
-- `image_id`, `file_name`
-- decoded `width`, `height`, `aspect_ratio`, `final_bytes`
-- `sha256`, `phash`
-- `category` (final normalized category)
-- `model_text`, `text_source`
-- `split`
+- `category_code`: one of the nine normalized sampling categories.
+- `category`: human-readable form of `category_code`.
+- `selection_hash`: fixed-seed SHA256 rank used for reproducible balanced sampling.
 
-Those fields require selection, image processing, deterministic caption composition, or leakage-safe
-splitting and will be added only in their corresponding phases.
+The category is a broad project sampling label, not a replacement for Smithsonian `object_type`,
+collection, topic, or culture fields.
+
+## Image/QA fields added in Phases 5-7
+
+Production image manifests add:
+
+| Field | Meaning |
+| --- | --- |
+| `image_id` | Stable, zero-padded-filename-compatible integer assigned after final Phase 4 selection |
+| `file_name` | Normalized JPEG filename, e.g. `00000001.jpg` |
+| `http_status` | Final HTTP response status for the download attempt |
+| `content_type` | Source response MIME type |
+| `attempts` | Network attempts; 0 means the byte-identical Phase 5 pilot result was reused |
+| `download_bytes` | Bytes fetched for the selected source derivative |
+| `download_seconds` | Network transfer time for the successful attempt |
+| `original_width`, `original_height` | Decoded dimensions of the downloaded source derivative before normalization |
+| `original_format` | Decoded source format |
+| `width`, `height` | Final normalized JPEG dimensions in canonical release metadata |
+| `aspect_ratio` | `width / height` |
+| `final_bytes` | Final JPEG byte count |
+| `sha256` | Exact checksum of the final JPEG bytes |
+| `phash` | 64-bit DCT perceptual hash represented as 16 hex characters |
+| `qa_flags` | Non-fatal image-QA flags such as extreme aspect ratio, when present |
+
+Image normalization applies EXIF orientation, transparency-safe RGB conversion, maximum side 512 px,
+JPEG quality 84, final decode verification, atomic rename, and a minimum downloaded-image maximum side
+of 256 px.
+
+## Text and split fields added in Phases 8-10
+
+The canonical release table adds:
+
+- `model_text`: deterministic composition of available Smithsonian title, object type, scientific
+  name, creator, date, place, topics, and description. No free-form facts are generated.
+- `text_source`: fixed value `smithsonian_metadata_composed` for these composed rows.
+- `rights`: convenience value `CC0`; the separate `metadata_rights` and `media_rights` source fields
+  are retained and both must be exact `CC0` for automatic release.
+- `split`: `train`, `validation`, or `test`, assigned at **object_id group level**. Every view of the
+  same object receives the same split.
+
+These derived fields never overwrite the corresponding raw Smithsonian fields.
 
 ## Recommended Parquet logical types
 

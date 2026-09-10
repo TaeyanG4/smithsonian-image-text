@@ -1,26 +1,104 @@
-# Phase 4 must refine this after candidate distributions are measured.
-categories:
-  art_design:
-    unit_codes: [CHNDM, FSG, HMSG, SAAM, NMAFA]
-    keywords: [painting, sculpture, drawing, print, textile, ceramic, furniture, design]
+version: 1
+
+selection:
+  target_rows: 25000
+  deterministic_seed: "smithsonian-image-text-v1-selection"
+  max_views_per_object: 4
+  max_rows_per_institution: 6250
+  category_order:
+    - archaeology
+    - space_aviation
+    - science_technology
+    - historical_objects
+    - coins_stamps_documents
+    - other_objects
+    - decorative_arts_design
+    - art
+    - natural_history
+  quotas:
+    art: 4000
+    natural_history: 5000
+    science_technology: 2400
+    historical_objects: 3500
+    archaeology: 900
+    space_aviation: 1700
+    decorative_arts_design: 3500
+    coins_stamps_documents: 2500
+    other_objects: 1500
+
+labels:
+  art: "Art"
+  natural_history: "Natural History"
+  science_technology: "Science & Technology"
+  historical_objects: "Historical Objects"
+  archaeology: "Archaeology"
+  space_aviation: "Space & Aviation"
+  decorative_arts_design: "Decorative Arts / Design"
+  coins_stamps_documents: "Coins / Stamps / Documents"
+  other_objects: "Other Objects"
+
+unit_groups:
   natural_history:
-    unit_codes: [NMNHPALEO, NMNHMINSCI, NMNHBIRDS, NMNHMAMMALS, NMNHENTO, NMNHFISHES, NMNHBOTANY]
-    keywords: [fossil, mineral, bird, mammal, insect, fish, plant, specimen]
-  science_technology:
-    unit_codes: [NASM, NMAH]
-    keywords: [spacecraft, aircraft, instrument, machine, engine, technology, science]
-  historical_objects:
-    unit_codes: [NMAH]
-    keywords: [artifact, history, military, political, domestic]
+    - NMNHPALEO
+    - NMNHMINSCI
+    - NMNHBIRDS
+    - NMNHMAMMALS
+    - NMNHENTO
+    - NMNHFISHES
+    - NMNHBOTANY
+    - NZP
+  art: [SAAM, HMSG]
+  design: [CHNDM]
+  asian_art: [FSG]
+  space: [NASM]
+  postal: [NPM]
+  history: [NMAH]
+
+keywords:
   archaeology:
-    unit_codes: []
-    keywords: [archaeology, archaeological, excavated]
+    - archaeology
+    - archaeological
+    - excavated
+    - excavation
+    - neolithic
+    - bronze age
+    - ancient
+    - " bce"
+  fine_art:
+    - painting
+    - sculpture
+    - drawing
+    - print
+    - watercolor
+    - photograph
   space_aviation:
-    unit_codes: [NASM]
-    keywords: [space, spacecraft, aviation, aircraft, rocket, satellite]
+    - spacecraft
+    - aircraft
+    - aviation
+    - rocket
+    - satellite
+    - space flight
   coins_stamps_documents:
-    unit_codes: [NPM, NMAH]
-    keywords: [coin, currency, stamp, postal, document, letter]
-  other:
-    unit_codes: [HAC, NZP, NMNHEDUCATION]
-    keywords: []
+    - coin
+    - currency
+    - stamp
+    - postal
+    - document
+    - letter
+    - manuscript
+    - correspondence
+    - banknote
+  science_technology:
+    - engine
+    - instrument
+    - patent
+    - machine
+    - computer
+    - technology
+    - electrical
+    - medical
+    - scientific
+    - model
+    - calculator
+    - telegraph
+    - radio

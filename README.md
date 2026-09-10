@@ -17,9 +17,27 @@ Reproducible tooling for a Kaggle-ready Smithsonian Open Access image-text datas
 
 ## Current status
 
-Phase 0 (scope freeze) and Phase 1 (source/rights/schema review) are implemented. The repository
-contains a **metadata-only** discovery foundation, but production image collection is intentionally
-not started yet.
+The local V1 build has progressed through discovery, filtering, balanced selection, the mandatory
+1K image pilot, production collection, image QA, deterministic text composition, object-level
+splitting, and the 5K starter subset. External Kaggle publication has **not** been performed.
+
+Current build summary (2026-09-10):
+
+- Phase 2 merged discovery: **97,718** media-level CC0 candidates.
+- Phase 3: **90,451 eligible / 639 review-required / 6,628 rejected**.
+- Phase 4: exactly **25,000** balanced rows selected from **18,321** objects, maximum four views per
+  object and maximum 6,250 rows from one institution.
+- Phase 5 pilot: **1,000 / 1,000** HTTP/decode successes, zero exact duplicates, projected 25K package
+  about **0.776 GB** -> package gate **GO**.
+- Phase 6 production: **24,972** successful images. Twenty-five source derivatives remained HTTP 404
+  after a retry pass and three were below the 256 px minimum; those 28 rows were deliberately not
+  backfilled because the project prioritizes quality over reaching exactly 25K.
+- Phase 7: all 24,972 retained JPEGs decoded again successfully; zero exact SHA256 duplicates and zero
+  repeated `media_id` groups. pHash-near candidates are audit/review signals only, not auto-deletions.
+- Phase 8/9: model-ready text is composed only from Smithsonian fields, is non-empty for 100% of
+  retained rows, and is capped at 512 characters while the full source `description` stays intact.
+- Phase 10: **19,979 train / 2,498 validation / 2,495 test** rows with zero `object_id` overlap.
+- Phase 11: balanced **5,000-row** starter subset from **4,621** objects, inheriting the same split.
 
 Important findings and decisions are documented in:
 
@@ -44,7 +62,7 @@ Anything else is rejected or sent to review according to the policy config.
 ## Developer setup
 
 ```powershell
-python -m pip install -e ".[dev]"
+python -m pip install -e ".[data,dev]"
 python -m pytest -q
 python -m ruff check .
 ```
@@ -68,19 +86,29 @@ images.
 python scripts/discover_metadata.py
 ```
 
-Phase 2 can later request the planned 50K-100K candidate pool explicitly after Phase 1 review is
-accepted, for example with `--all-preferred-units --target 80000` and an appropriate output path.
-Large outputs under `data/` are ignored by Git.
+Large Phase 2 runs remain explicit. For a fresh rebuild, use an explicit output/report path and
+`--all-preferred-units --target ...`; the CLI will not silently turn its safe smoke default into a
+50K+ run. Large outputs under `data/` are ignored by Git.
+
+The collection scripts are ordered to preserve the required gates:
+
+```text
+discover_metadata.py -> build_candidate_tables.py -> select_candidates.py
+-> run_pilot.py -> download_images.py -> qa_images.py
+-> build_metadata.py -> create_splits.py -> build_starter.py
+-> build_release.py -> validate_release.py
+```
 
 ## Repository layout
 
 ```text
 config/                     Collection and eligibility policy
 docs/                       Source, rights, schema, and discovery decisions
-src/smithsonian_image_text/ Metadata parsing/discovery/filtering
-scripts/                    Safe metadata-only entry points for Phase 1/2
+src/smithsonian_image_text/ Metadata, filtering, image, text, and split logic
+scripts/                    Discovery through local release/validation entry points
 tests/                      Network-free unit tests
 data/                       Local build products; large files are gitignored
 ```
 
-No Kaggle API key is required for Phase 0/1 and this repository never stores credentials.
+No Kaggle API key is required to rebuild the local dataset package and this repository never stores
+credentials. Publishing is intentionally a separate external action.

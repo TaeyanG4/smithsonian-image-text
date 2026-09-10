@@ -1,9 +1,9 @@
-# Collection Report — Phase 0/1
+# Collection Report — V1 build through Phase 11
 
 Probe date: **2026-09-10**
 
-Status: **Phase 0/1 complete enough to permit Phase 2 metadata-only discovery; production image
-download remains blocked.**
+Status: **Phases 0-11 completed locally. The 1K pilot passed before production collection. Final local
+release packaging/validation is the next step; no Kaggle publication has been performed.**
 
 ## What was actually executed
 
@@ -14,7 +14,9 @@ download remains blocked.**
 - Performed two one-off IDS derivative checks in ignored scratch space solely to verify the 512 px
   URL behavior. These are not part of the dataset and no full-resolution archive was collected.
 - Ran a metadata-only 400-row schema smoke across eight units.
-- Ran network-free tests and lint.
+- Ran a 50K-100K bounded metadata discovery, balanced selection, 1K image pilot, production image
+  collection, image QA, deterministic text build, leakage-safe split, and 5K starter build.
+- Ran network-free tests and lint throughout development.
 
 ## Current source probe
 
@@ -114,7 +116,8 @@ preserved and must be handled by later download/resize validation rather than re
 
 ## Phase 1 gate decision
 
-**PASS for metadata-only Phase 2 discovery, with conditions.**
+**PASS for metadata-only Phase 2 discovery, with conditions.** Those conditions were preserved in the
+later automatic release filters.
 
 Conditions that remain mandatory:
 
@@ -127,5 +130,144 @@ Conditions that remain mandatory:
 6. Do not start 25K production image collection before the 1K pilot and package-size/runtime gate.
 7. Treat aggregate API metrics as planning aids only.
 
-The generated audit files under `data/audits/` and metadata smoke under `data/interim/` are local build
-artifacts and intentionally ignored by Git.
+## Phase 2 — metadata discovery
+
+The full V1 metadata pool was built without downloading image bytes during discovery. A broad
+32-shard scan across preferred units was followed by offset shard extensions focused on sparse
+art/history/space units so additional rows improved diversity rather than simply increasing the
+largest natural-history collections.
+
+- Final merged candidates: **97,718 media rows**.
+- Allowed design range: **50,000-100,000**.
+- Candidate-producing raw source records are retained as compressed NDJSON in `data/raw_metadata/`.
+- Canonical candidates are retained in Parquet under `data/interim/`.
+- `data/audits/local_snapshot_manifest.json` pins 21 V1 metadata/config lineage artifacts by SHA256.
+- The completed large scans predate direct per-shard SHA256 capture, so their reports preserve shard
+  URLs and the raw candidate-producing records are locally hashed. New discovery runs capture source
+  index and shard URL/ETag/Last-Modified/bytes/SHA256 directly.
+
+## Phase 3 — eligibility
+
+The final merged metadata table produced:
+
+| Status | Rows |
+| --- | ---: |
+| Eligible | **90,451** |
+| Review required | **639** |
+| Rejected | **6,628** |
+
+In addition to the original rights/text/sensitive controls, V1 rejects an exact media URL when it is
+attached to multiple Smithsonian object IDs. This avoids an ambiguous image-to-object text alignment
+and prevents a shared image from crossing later object-level splits. Review-required rows are not
+silently promoted into the automatic release.
+
+## Phase 4 — balanced sampling
+
+Deterministic selection produced exactly **25,000 media rows from 18,321 unique objects**. The
+selection capped one object at four views and one institution at 6,250 rows. Actual supply after
+filtering was used to revise the initial example quotas rather than forcing categories that did not
+have enough clean candidates.
+
+| Category | Selected |
+| --- | ---: |
+| Art | 4,000 |
+| Natural History | 5,000 |
+| Science & Technology | 2,400 |
+| Historical Objects | 3,500 |
+| Archaeology | 900 |
+| Space & Aviation | 1,700 |
+| Decorative Arts / Design | 3,500 |
+| Coins / Stamps / Documents | 2,500 |
+| Other Objects | 1,500 |
+
+## Phase 5 — 1,000-image pilot
+
+The required category-balanced pilot was executed before production:
+
+- attempted/successful: **1,000 / 1,000**;
+- HTTP 404: **0**;
+- decode failures: **0**;
+- exact SHA256 duplicate groups: **0**;
+- final JPEG mean: **30.7 KB**;
+- final JPEG p50: **27.5 KB**;
+- final JPEG p95: **66.2 KB**;
+- projected 25K package: about **0.776 GB**;
+- measured pilot wall time: about **61.8 seconds** at 12 workers;
+- projected full runtime at the same concurrency: about **0.43 hours**.
+
+The package-size gate was therefore **GO** (`<= 4 GB`). The unexpectedly small average files are a
+consequence of using official ~512 px derivatives plus JPEG quality 84; images are not upsampled merely
+to hit a target package size.
+
+## Phase 6 — production image collection
+
+Production used 16 workers, retry/backoff, bounded response size, temporary source files, decode
+validation, EXIF orientation, RGB conversion, maximum side 512 px, JPEG quality 84, atomic final
+rename, append-only checkpoints, and resume. The 1,000 validated pilot outputs were SHA256-verified and
+reused instead of being downloaded again.
+
+First production pass:
+
+- selected rows: **25,000**;
+- successful images: **24,972**;
+- permanent failures after a second resume/retry pass: **28**;
+- failures: **25 HTTP 404 + 3 images below the 256 px minimum**;
+- final image bytes: **797,441,211**;
+- first-pass wall time: about **710.8 seconds**;
+- image + production-candidate metadata working-set estimate: about **0.808 GB**.
+
+The same 28 rows failed again on a dedicated resume pass, so they were not backfilled. **24,972 clean
+images** is preferred over weakening quality controls to reach exactly 25,000.
+
+## Phase 7 — image QA and duplicate review
+
+Every retained production JPEG was decoded again after collection:
+
+- scanned: **24,972**;
+- QA keep: **24,972**;
+- QA hard exclude: **0**;
+- exact SHA256 duplicate groups: **0**;
+- repeated `media_id` groups: **0**;
+- extreme-aspect-ratio review flags: **34**.
+
+The 34 extreme-aspect files were visually reviewed as legitimate long textiles/patterns, currency/
+document strips, and other narrow objects rather than broken crops, so the flag is retained without
+automatic exclusion. pHash distance <=4 produces many review candidates in visually repetitive
+white-background collections; per project policy they are **not auto-deleted**. Pair and connected-
+component audits are kept for review while exact SHA256 remains the automatic exact-duplicate rule.
+
+## Phases 8-10 — text, canonical metadata, and split
+
+Final canonical metadata contains **24,972 rows / 18,299 unique objects**. The 28 production failures
+are the only selected rows removed at this stage.
+
+`model_text` is deterministic source-only composition; the full authoritative source fields remain
+separate. After profiling revealed that a few source descriptions were extremely long, the ML
+convenience text was capped without modifying the source `description`:
+
+- usable `model_text`: **100%**;
+- mean length: about **263 characters**;
+- p95: **498 characters**;
+- maximum: **512 characters**.
+
+Object-level deterministic split:
+
+| Split | Rows | Objects |
+| --- | ---: | ---: |
+| train | **19,979** | **14,663** |
+| validation | **2,498** | **1,831** |
+| test | **2,495** | **1,805** |
+
+`object_id` intersections between every pair of splits are **0**. Category distributions stay close
+to 80/10/10 at row level.
+
+## Phase 11 — starter subset
+
+The starter subset contains exactly **5,000 rows / 4,621 objects**, allows at most two views per object,
+and matches 20% of the full selection category quota: 800 Art, 1,000 Natural History, 480 Science &
+Technology, 700 Historical Objects, 180 Archaeology, 340 Space & Aviation, 700 Design, 500
+Coins/Stamps/Documents, and 300 Other. It inherits the full dataset split assignment and has zero
+object-level split leakage.
+
+The generated audit files under `data/audits/`, metadata under `data/interim/`, and images under
+`data/images/` are local build artifacts and intentionally ignored by Git.

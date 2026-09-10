@@ -14,7 +14,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-data = ["pyarrow>=17,<20"]
+data = ["numpy>=2,<3", "Pillow>=10,<12", "pyarrow>=17,<22"]
 dev = ["pytest>=8,<9", "ruff>=0.6,<1"]
 
 [tool.pytest.ini_options]
