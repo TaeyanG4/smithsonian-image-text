@@ -191,6 +191,8 @@ def _write_kaggle_metadata(path: Path, *, description: str, metadata_path: Path)
     metadata_schema = _table_schema_fields(metadata_path)
     split_fields = ["image_id", "object_id", "file_name", "category", "split"]
     split_schema = [field for field in metadata_schema if field["name"] in split_fields]
+    caption_fields = ["image_id", "file_name", "object_id", "model_text", "text_source"]
+    caption_schema = [field for field in metadata_schema if field["name"] in caption_fields]
     payload = {
         "title": KAGGLE_TITLE,
         "subtitle": KAGGLE_SUBTITLE,
@@ -239,6 +241,7 @@ def _write_kaggle_metadata(path: Path, *, description: str, metadata_path: Path)
             {
                 "path": "captions.jsonl",
                 "description": "Compact image_id/file_name/object_id plus deterministic Smithsonian model_text.",
+                "schema": {"fields": caption_schema},
             },
             {
                 "path": "checksums.sha256",
@@ -266,6 +269,34 @@ def _write_kaggle_metadata(path: Path, *, description: str, metadata_path: Path)
                 "path": "splits.csv",
                 "description": "Object-level leakage-safe train/validation/test assignments.",
                 "schema": {"fields": split_schema},
+            },
+            {
+                "path": "starter_5k/captions.jsonl",
+                "description": "Starter-subset image identifiers and deterministic Smithsonian model_text.",
+                "schema": {"fields": caption_schema},
+            },
+            {
+                "path": "starter_5k/metadata.csv",
+                "description": "CSV metadata for the balanced 5,000-image starter subset.",
+                "schema": {"fields": metadata_schema},
+            },
+            {
+                "path": "starter_5k/metadata.parquet",
+                "description": "Canonical Parquet metadata for the balanced 5,000-image starter subset.",
+                "schema": {"fields": metadata_schema},
+            },
+            {
+                "path": "starter_5k/splits.csv",
+                "description": "Leakage-safe split assignments inherited by the 5,000-image starter subset.",
+                "schema": {"fields": split_schema},
+            },
+            {
+                "path": "provenance/local_snapshot_manifest.json",
+                "description": "Hashes and identifiers pinning the Smithsonian metadata snapshot used for this release.",
+            },
+            {
+                "path": "examples/starter_eda.ipynb",
+                "description": "Starter exploratory notebook demonstrating loading, invariants, plots, and image-text previews.",
             },
         ],
     }

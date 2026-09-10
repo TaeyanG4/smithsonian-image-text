@@ -4,8 +4,9 @@
 The ordinary Kaggle dataset metadata update persists dataset-level metadata but
 does not currently populate the analyzed Data Explorer file/column description
 fields used by the Usability score. This tool keeps the repository metadata as
-the source of truth, validates the exact live V1 file/column layout, and can
-submit the same metadata shape used by Kaggle's web application.
+the source of truth, validates the exact live file/column layout for the latest
+READY dataset version (or a version selected explicitly), and can submit the
+same metadata shape used by Kaggle's web application.
 
 The default mode is read-only. Pass ``--apply`` to attempt the authenticated
 Data Explorer write. No browser automation is used.
@@ -32,11 +33,11 @@ OWNER = "taeyangg4"
 DATASET_SLUG = "smithsonian-25k-museum-image-text"
 DATASET_REF = f"{OWNER}/{DATASET_SLUG}"
 DATASET_ID = 11_974_059
-APPROVED_VERSION = 1
 
 KAGGLE_ORIGIN = "https://www.kaggle.com"
 GET_DATASET_BASICS = "/api/i/datasets.DatasetDetailService/GetDatasetBasics"
 GET_DATASET_USABILITY = "/api/i/datasets.DatasetDetailService/GetDatasetUsabilityRating"
+GET_DATASET_HISTORY = "/api/i/datasets.DatasetService/GetDatasetHistory"
 GET_DATABUNDLE_EXTERNAL = "/api/i/datasets.databundles.DatabundleService/GetDatabundleExternal"
 GET_DATABUNDLE_EXTERNAL_CHILDREN = (
     "/api/i/datasets.databundles.DatabundleService/GetDatabundleExternalChildren"
@@ -134,6 +135,35 @@ def _resources() -> dict[str, dict[str, Any]]:
     return result
 
 
+def _live_resources(context: LiveContext) -> dict[str, dict[str, Any]]:
+    """Return local metadata for files Kaggle exposes at the Data Explorer root.
+
+    Release metadata can legitimately describe files inside upload directories
+    (for example ``starter_5k/metadata.parquet``). Kaggle uploads those
+    directories as archives, while its Data Explorer root exposes only the
+    analyzed top-level resources used by the Usability checklist. Keep the
+    nested metadata, but audit only files that actually exist in this live
+    Data Explorer version.
+    """
+    resources = _resources()
+    live_names = set(context.file_firestore_paths)
+    missing = live_names - set(resources)
+    if missing:
+        raise KaggleUsabilityError(
+            f"dataset-metadata.json is missing live Kaggle files: {sorted(missing)}"
+        )
+
+    missing_top_level = {
+        name for name in resources if "/" not in name and name not in live_names
+    }
+    if missing_top_level:
+        raise KaggleUsabilityError(
+            "dataset-metadata.json contains top-level resources absent from live Kaggle: "
+            f"{sorted(missing_top_level)}"
+        )
+    return {name: resources[name] for name in context.file_firestore_paths}
+
+
 def _verification(context: LiveContext) -> dict[str, int]:
     return {
         "databundleVersionId": context.databundle_version_id,
@@ -141,14 +171,39 @@ def _verification(context: LiveContext) -> dict[str, int]:
     }
 
 
-def load_live_context(session: _Session) -> LiveContext:
+def latest_ready_version(session: _Session) -> int:
+    history = _post_json(
+        session,
+        GET_DATASET_HISTORY,
+        {"datasetId": DATASET_ID, "count": 100},
+    )
+    items = history.get("items")
+    if not isinstance(items, list):
+        raise KaggleUsabilityError("Kaggle dataset history is unavailable")
+    versions: list[int] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        info = item.get("versionInfo")
+        if not isinstance(info, dict) or str(info.get("status") or "") != "READY":
+            continue
+        number = int(info.get("versionNumber", 0) or 0)
+        if number > 0:
+            versions.append(number)
+    if not versions:
+        raise KaggleUsabilityError("Kaggle has no READY dataset version")
+    return max(versions)
+
+
+def load_live_context(session: _Session, *, version_number: int) -> LiveContext:
+    requested_version = version_number
     basics = _post_json(
         session,
         GET_DATASET_BASICS,
         {
             "ownerSlug": OWNER,
             "datasetSlug": DATASET_SLUG,
-            "datasetVersionNumber": APPROVED_VERSION,
+            "datasetVersionNumber": requested_version,
         },
     )
     dataset_id = int(basics.get("datasetId", 0) or 0)
@@ -160,9 +215,10 @@ def load_live_context(session: _Session) -> LiveContext:
         raise KaggleUsabilityError(
             f"dataset id changed: expected {DATASET_ID}, got {dataset_id}"
         )
-    if version_number != APPROVED_VERSION:
+    if version_number != requested_version:
         raise KaggleUsabilityError(
-            f"dataset version changed: expected {APPROVED_VERSION}, got {version_number}"
+            "Kaggle returned a different dataset version than requested: "
+            f"expected {requested_version}, got {version_number}"
         )
     if dataset_version_id <= 0 or databundle_version_id <= 0:
         raise KaggleUsabilityError("Kaggle version identifiers are incomplete")
@@ -185,8 +241,8 @@ def load_live_context(session: _Session) -> LiveContext:
         raise KaggleUsabilityError("Kaggle Data Explorer returned no data source")
     if int(source.get("sourceId", 0) or 0) != DATASET_ID:
         raise KaggleUsabilityError("Data Explorer dataset id changed")
-    if int(source.get("versionNumber", 0) or 0) != APPROVED_VERSION:
-        raise KaggleUsabilityError("Data Explorer version disagrees with V1")
+    if int(source.get("versionNumber", 0) or 0) != version_number:
+        raise KaggleUsabilityError("Data Explorer version disagrees with the requested version")
     root_path = str(source.get("path") or "")
     version = source.get("databundleVersion")
     if not root_path or not isinstance(version, dict):
@@ -223,11 +279,18 @@ def load_live_context(session: _Session) -> LiveContext:
     }
     if any(not value for value in file_paths.values()):
         raise KaggleUsabilityError("Data Explorer returned a file without Firestore path")
-    expected_files = set(_resources())
-    if set(file_paths) != expected_files:
+    resources = _resources()
+    live_names = set(file_paths)
+    missing_files = live_names - set(resources)
+    missing_top_level = {
+        name for name in resources if "/" not in name and name not in live_names
+    }
+    if missing_files or missing_top_level:
         raise KaggleUsabilityError(
             "live Kaggle file set does not match dataset-metadata.json: "
-            f"expected {sorted(expected_files)}, got {sorted(file_paths)}"
+            f"missing_local={sorted(missing_files)}, "
+            f"missing_live_top_level={sorted(missing_top_level)}, "
+            f"live={sorted(file_paths)}"
         )
 
     return LiveContext(
@@ -252,9 +315,11 @@ def _live_columns(
         GET_DATABUNDLE_EXTERNAL_COLUMNS,
         {"verificationInfo": verification, "firestorePath": file_path},
     )
-    columns = base.get("columns")
+    columns = base.get("columns") or []
     if not isinstance(columns, list):
         raise KaggleUsabilityError("Kaggle column listing is unavailable")
+    if not columns:
+        return []
     ordered = sorted(
         (item for item in columns if isinstance(item, dict)),
         key=lambda item: int(item.get("order", 0) or 0),
@@ -287,15 +352,19 @@ def _live_columns(
 
 
 def build_update_plan(session: _Session, context: LiveContext) -> list[dict[str, Any]]:
-    resources = _resources()
+    resources = _live_resources(context)
     verification = _verification(context)
     plan: list[dict[str, Any]] = []
     for name, resource in resources.items():
         file_path = context.file_firestore_paths[name]
         expected_fields = (resource.get("schema") or {}).get("fields") or []
         column_updates: list[dict[str, Any]] = []
-        if expected_fields:
-            live = _live_columns(session, context, file_path=file_path)
+        live = _live_columns(session, context, file_path=file_path)
+        if live:
+            if not expected_fields:
+                raise KaggleUsabilityError(
+                    f"{name}: Kaggle exposes columns but local schema metadata is missing"
+                )
             live_names = [str(item.get("_name") or "") for item in live]
             expected_names = [str(item.get("name") or "") for item in expected_fields]
             if live_names != expected_names:
@@ -335,7 +404,7 @@ def build_update_plan(session: _Session, context: LiveContext) -> list[dict[str,
 
 
 def get_coverage(session: _Session, context: LiveContext) -> dict[str, Any]:
-    resources = _resources()
+    resources = _live_resources(context)
     verification = _verification(context)
     children = _post_json(
         session,
@@ -368,13 +437,17 @@ def get_coverage(session: _Session, context: LiveContext) -> dict[str, Any]:
     per_table: dict[str, dict[str, int]] = {}
     for name, resource in resources.items():
         fields = (resource.get("schema") or {}).get("fields") or []
-        if not fields:
-            continue
         live = _live_columns(
             session,
             context,
             file_path=context.file_firestore_paths[name],
         )
+        if not live:
+            continue
+        if not fields:
+            raise KaggleUsabilityError(
+                f"{name}: Kaggle exposes columns but local schema metadata is missing"
+            )
         expected_names = [str(item.get("name") or "") for item in fields]
         live_names = [str(item.get("_name") or "") for item in live]
         if live_names != expected_names:
@@ -440,6 +513,11 @@ def authenticated_session() -> requests.Session:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
+        "--dataset-version",
+        type=int,
+        help="Dataset version to audit; defaults to the latest READY version in Kaggle history.",
+    )
+    parser.add_argument(
         "--apply",
         action="store_true",
         help="Attempt authenticated Data Explorer metadata writes after validation.",
@@ -450,7 +528,8 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     public = requests.Session()
-    context = load_live_context(public)
+    version_number = args.dataset_version or latest_ready_version(public)
+    context = load_live_context(public, version_number=version_number)
     plan = build_update_plan(public, context)
     before = get_coverage(public, context)
     report: dict[str, Any] = {
