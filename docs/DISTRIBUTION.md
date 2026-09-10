@@ -31,11 +31,16 @@ Recommended resources:
 
 1. full V1 package;
 2. `starter_5k/` for quick notebooks;
-3. `examples/starter_eda.ipynb` as the first public notebook;
-4. methodology/rights docs shipped beside the data.
+3. `examples/search_25k_museum_images.ipynb` as the first public retrieval notebook;
+4. `examples/starter_eda.ipynb` as the lightweight exploration notebook;
+5. methodology/rights docs shipped beside the data.
 
 Publishing should be an explicit external action after inspecting the final local validation report.
 Do not let a rebuild script automatically overwrite an existing public dataset version.
+
+The Kaggle CLI archives top-level directories when invoked with `--dir-mode zip`, so the public upload
+may expose `images.zip`, `starter_5k.zip`, `optional.zip`, and similar archives rather than mounted
+folders. The included notebooks detect both the local folder layout and this Kaggle zip layout.
 
 ## Hugging Face mirror
 
@@ -54,9 +59,10 @@ dataset contract and prevents multi-view leakage.
 
 ## Optional embeddings
 
-CLIP/SigLIP embeddings are useful but not required for the base release. If generated later, publish
-them as a side artifact keyed by stable `image_id` plus the exact model identifier/revision,
-preprocessing configuration, embedding dtype/dimension, and source V1 release checksum.
+V1 includes optional CLIP ViT-B/32 image embeddings as a small side artifact keyed by stable
+`image_id`. The exact model identifier/revision, preprocessing configuration, embedding
+dtype/dimension, and source metadata checksum are stored beside the embeddings. The embeddings are a
+convenience artifact and are not the dataset source-of-truth.
 
 This prevents embedding-model updates from forcing a new image release and keeps the default download
 small.

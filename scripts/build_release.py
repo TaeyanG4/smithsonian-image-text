@@ -88,6 +88,7 @@ human-written visual caption.
 - `captions.jsonl`: image IDs, filenames, and model-ready text.
 - `splits.csv`: object-level leakage-safe train/validation/test split assignments.
 - `starter_5k/`: balanced starter subset using the same schema and split assignments.
+- `optional/clip_embeddings.parquet`: optional normalized CLIP image embeddings for fast retrieval.
 - `SOURCES.md`, `RIGHTS_POLICY.md`, `DATA_DICTIONARY.md`: source, rights, and field documentation.
 - `release_manifest.json` and `checksums.sha256`: release audit information.
 
@@ -104,6 +105,25 @@ Rows from the same Smithsonian `object_id` are always assigned to the same split
 views of one object cannot leak across train, validation, and test.
 """
     path.write_text(text, encoding="utf-8")
+
+
+def _write_kaggle_metadata(path: Path, *, description: str) -> None:
+    payload = {
+        "title": "25K Museum Images with Captions",
+        "subtitle": "CC0 Smithsonian images and metadata for computer vision, CLIP and VLMs",
+        "description": description,
+        "id": "taeyangg4/25k-museum-images-with-captions",
+        "licenses": [{"name": "CC0-1.0"}],
+        "keywords": ["computer vision", "art", "deep learning", "image classification"],
+        "image": "cover_grid.jpg",
+        "resources": [
+            {"path": "metadata.parquet", "description": "Canonical metadata for all release rows."},
+            {"path": "metadata.csv", "description": "CSV convenience export of the metadata."},
+            {"path": "captions.jsonl", "description": "Deterministic model-ready Smithsonian metadata text."},
+            {"path": "splits.csv", "description": "Object-level leakage-safe train/validation/test splits."},
+        ],
+    }
+    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 def main() -> int:
@@ -147,6 +167,16 @@ def main() -> int:
         "--snapshot-manifest",
         type=Path,
         default=ROOT / "data" / "audits" / "local_snapshot_manifest.json",
+    )
+    parser.add_argument(
+        "--clip-embeddings",
+        type=Path,
+        default=ROOT / "data" / "interim" / "clip_embeddings.parquet",
+    )
+    parser.add_argument(
+        "--clip-embeddings-manifest",
+        type=Path,
+        default=ROOT / "data" / "audits" / "clip_embeddings_manifest.json",
     )
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
@@ -225,16 +255,37 @@ def main() -> int:
         "DISTRIBUTION.md",
     ):
         shutil.copy2(ROOT / "docs" / source_name, args.output_dir / source_name)
-    example_notebook = ROOT / "notebooks" / "starter_eda.ipynb"
-    if example_notebook.is_file():
-        examples_dir = args.output_dir / "examples"
-        examples_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(example_notebook, examples_dir / example_notebook.name)
+    for source_name in ("cover_grid.jpg", "cover_grid_manifest.json"):
+        source = ROOT / "docs" / source_name
+        if source.is_file():
+            shutil.copy2(source, args.output_dir / source_name)
+    example_notebooks = [
+        ROOT / "notebooks" / "starter_eda.ipynb",
+        ROOT / "notebooks" / "search_25k_museum_images.ipynb",
+    ]
+    examples_dir = args.output_dir / "examples"
+    for example_notebook in example_notebooks:
+        if example_notebook.is_file():
+            examples_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(example_notebook, examples_dir / example_notebook.name)
     if args.snapshot_manifest.is_file():
         provenance_dir = args.output_dir / "provenance"
         provenance_dir.mkdir(parents=True, exist_ok=True)
         shutil.copy2(args.snapshot_manifest, provenance_dir / args.snapshot_manifest.name)
+    clip_manifest: dict = {}
+    if args.clip_embeddings.is_file():
+        optional_dir = args.output_dir / "optional"
+        optional_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(args.clip_embeddings, optional_dir / "clip_embeddings.parquet")
+        if args.clip_embeddings_manifest.is_file():
+            shutil.copy2(
+                args.clip_embeddings_manifest,
+                optional_dir / "clip_embeddings_manifest.json",
+            )
+            clip_manifest = _load_json(args.clip_embeddings_manifest)
     _write_readme(args.output_dir / "README.md", final_count=len(rows), starter_count=len(starter_rows))
+    kaggle_description = (ROOT / "docs" / "KAGGLE_PAGE.md").read_text(encoding="utf-8")
+    _write_kaggle_metadata(args.output_dir / "dataset-metadata.json", description=kaggle_description)
 
     image_bytes = sum((release_images / str(row["file_name"])).stat().st_size for row in rows)
     starter_image_bytes = sum(
@@ -288,6 +339,19 @@ def main() -> int:
             "exact_duplicate_rows_dropped": qa_report.get("exact_duplicate_rows_dropped"),
             "near_duplicate_candidate_pairs": qa_report.get("near_duplicate_candidate_pairs"),
         },
+        "optional_clip_embeddings": (
+            {
+                "included": True,
+                "model_id": clip_manifest.get("model_id"),
+                "model_revision": clip_manifest.get("model_revision"),
+                "embedding_dimension": clip_manifest.get("embedding_dimension"),
+                "embedding_dtype": clip_manifest.get("embedding_dtype"),
+                "image_count": clip_manifest.get("image_count"),
+                "path": "optional/clip_embeddings.parquet",
+            }
+            if args.clip_embeddings.is_file()
+            else {"included": False}
+        ),
         "checksums_file": "checksums.sha256",
     }
     manifest_path = args.output_dir / "release_manifest.json"

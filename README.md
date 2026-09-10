@@ -41,8 +41,9 @@ Current build summary (2026-09-10):
 - Phase 11: balanced **5,000-row** starter subset from **4,621** objects, inheriting the same split.
 - Phase 13/14 local release: **PASS**, 24,972 main rows + 5,000 starter rows, zero missing/decode/
   dimension/rights/split-leakage/checksum failures, final apparent package about **1.036 GB**.
-- Phase 15/16: Kaggle page copy and a starter EDA notebook are prepared locally; publication remains a
-  separate explicit external action.
+- Phase 12/15/16: optional CLIP ViT-B/32 image embeddings, a zero-shot sentence retrieval notebook,
+  Kaggle page copy, and a deterministic 3x3 cover grid are prepared locally; publication remains a
+  separate external action.
 
 Important findings and decisions are documented in:
 
@@ -102,11 +103,13 @@ The collection scripts are ordered to preserve the required gates:
 discover_metadata.py -> build_candidate_tables.py -> select_candidates.py
 -> run_pilot.py -> download_images.py -> qa_images.py
 -> build_metadata.py -> create_splits.py -> build_starter.py
+-> build_clip_embeddings.py -> build_cover.py
 -> build_release.py -> validate_release.py
 ```
 
-Phase 12 embeddings are intentionally omitted from the base V1 package. They can be distributed as a
-separate optional artifact later without making every image-only/text-only user download them.
+Phase 12 embeddings are optional convenience data. V1 includes a small normalized float16 CLIP
+ViT-B/32 embedding artifact keyed by `image_id`, with the exact model revision and preprocessing
+recorded separately. Images and Smithsonian metadata remain the source-of-truth.
 
 ## Repository layout
 

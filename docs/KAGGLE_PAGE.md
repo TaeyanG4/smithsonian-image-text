@@ -29,17 +29,22 @@ minimum resolution gate.
 
 ## What is included
 
-- `images/` — 24,972 normalized JPEGs.
+- `images/` — 24,972 normalized JPEGs (uploaded through the Kaggle CLI as `images.zip`).
 - `metadata.parquet` — canonical full metadata; recommended table for analysis/training.
 - `metadata.csv` — convenience export of the same rows.
 - `captions.jsonl` — image ID, filename, object ID, and deterministic `model_text`.
 - `splits.csv` — leakage-safe train/validation/test assignments.
-- `starter_5k/` — balanced 5,000-image subset with the same schema and inherited split.
+- `starter_5k/` — balanced 5,000-image subset with the same schema and inherited split (Kaggle upload:
+  `starter_5k.zip`).
 - `SOURCES.md`, `RIGHTS_POLICY.md`, `DATA_DICTIONARY.md`, `COLLECTION_REPORT.md` — provenance and
   methodology.
 - `provenance/local_snapshot_manifest.json` — hashes pinning the local metadata snapshot used for V1.
+- `optional/clip_embeddings.parquet` — 512-dimensional normalized float16 CLIP image embeddings
+  (Kaggle upload: `optional.zip`).
+- `optional/clip_embeddings_manifest.json` — exact model revision and preprocessing provenance.
 - `checksums.sha256` — release-file checksums.
 - `examples/starter_eda.ipynb` — starter exploration notebook.
+- `examples/search_25k_museum_images.ipynb` — zero-shot sentence-to-image retrieval demo.
 
 ## Categories
 
@@ -112,7 +117,7 @@ links.
 
 - 3D assets, audio, or video;
 - bulk OCR/document corpora;
-- embeddings as a required base artifact;
+- embeddings as a source-of-truth field (the included CLIP file is optional convenience data);
 - free-form generated captions;
 - rows requiring manual sensitive/rights review.
 

@@ -1,0 +1,100 @@
+{
+  "purpose": "Kaggle dataset cover",
+  "model_id": "openai/clip-vit-base-patch32",
+  "model_revision": "3d74acf9a28c67741b2f4f2ea7635f0aaf6f0268",
+  "selection": [
+    {
+      "category": "Art",
+      "prompt": "a landscape painting",
+      "image_id": 10031,
+      "file_name": "00010031.jpg",
+      "object_id": "saam_1985.66.389",
+      "title": "Iron Bluff, 1200 Miles above St. Louis",
+      "source_url": "https://americanart.si.edu/collections/search/artwork/?id=4131",
+      "clip_score": 0.3101047873497009
+    },
+    {
+      "category": "Natural History",
+      "prompt": "a fossil specimen",
+      "image_id": 304,
+      "file_name": "00000304.jpg",
+      "object_id": "nmnhpaleobiology_11689601",
+      "title": "Insecta",
+      "source_url": "http://n2t.net/ark:/65665/3da759919-a2cb-4d3a-a000-8fd893f20b75",
+      "clip_score": 0.3226817548274994
+    },
+    {
+      "category": "Science & Technology",
+      "prompt": "a scientific instrument",
+      "image_id": 21925,
+      "file_name": "00021925.jpg",
+      "object_id": "nmah_998711",
+      "title": "Patent Model of a Book-stitching Machine",
+      "source_url": "https://n2t.net/ark:/65665/ng49ca746a8-611b-704b-e053-15f76fa0b4fa",
+      "clip_score": 0.3336350917816162
+    },
+    {
+      "category": "Historical Objects",
+      "prompt": "a historical museum artifact",
+      "image_id": 12478,
+      "file_name": "00012478.jpg",
+      "object_id": "nmah_1371303",
+      "title": "Firefighter's Arm Band \"HAND IN HAND\"",
+      "source_url": "https://n2t.net/ark:/65665/ng49ca746ac-f846-704b-e053-15f76fa0b4fa",
+      "clip_score": 0.2645493149757385
+    },
+    {
+      "category": "Archaeology",
+      "prompt": "an ancient archaeological object",
+      "image_id": 17389,
+      "file_name": "00017389.jpg",
+      "object_id": "fsg_F1909.1633",
+      "title": "Bead",
+      "source_url": "https://asia.si.edu/object/F1909.1633/",
+      "clip_score": 0.27585718035697937
+    },
+    {
+      "category": "Space & Aviation",
+      "prompt": "a spacecraft",
+      "image_id": 19724,
+      "file_name": "00019724.jpg",
+      "object_id": "nasm_A20030090000",
+      "title": "Communications Satellite, Echo 1",
+      "source_url": "http://n2t.net/ark:/65665/nv9da0ccb49-ab15-49c3-888a-4abf25a26e56",
+      "clip_score": 0.30204275250434875
+    },
+    {
+      "category": "Decorative Arts / Design",
+      "prompt": "a decorative textile pattern",
+      "image_id": 18127,
+      "file_name": "00018127.jpg",
+      "object_id": "chndm_1898-1-2",
+      "title": "Cap crown",
+      "source_url": "https://collection.cooperhewitt.org/view/objects/asitem/id/6638",
+      "clip_score": 0.32953178882598877
+    },
+    {
+      "category": "Coins / Stamps / Documents",
+      "prompt": "a postage stamp or historical document",
+      "image_id": 14060,
+      "file_name": "00014060.jpg",
+      "object_id": "npm_1980.2493.592",
+      "title": "3c Locomotive re-issue single",
+      "source_url": "https://postalmuseum.si.edu/object/npm_1980.2493.592",
+      "clip_score": 0.3414023816585541
+    },
+    {
+      "category": "Other Objects",
+      "prompt": "an interesting museum object",
+      "image_id": 17198,
+      "file_name": "00017198.jpg",
+      "object_id": "hac_FJP.1987.129",
+      "title": "Bouquet holder, carnet-de-bal",
+      "source_url": "http://n2t.net/ark:/65665/aq4a85a0b40-8d17-4832-99c2-29ec14f84cdd",
+      "clip_score": 0.275198370218277
+    }
+  ],
+  "output": "H:\\dev\\kaggle-data\\smithsonian-image-text\\docs\\cover_grid.jpg",
+  "width": 1260,
+  "height": 1416
+}

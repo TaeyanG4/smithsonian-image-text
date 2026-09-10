@@ -271,10 +271,21 @@ object-level split leakage.
 
 ## Phase 12 — optional embeddings
 
-Embeddings are intentionally **omitted from the base V1 package**. The package already exposes stable
-`image_id`, `file_name`, `model_text`, split, SHA256, and pHash fields, so CLIP/SigLIP or other
-embeddings can be produced later as a versioned side artifact. Keeping them separate avoids increasing
-the default download for users who only need images and metadata.
+V1 includes an optional CLIP ViT-B/32 image-embedding side artifact while keeping images and
+Smithsonian metadata as the source-of-truth:
+
+- model: `openai/clip-vit-base-patch32`;
+- pinned model revision: `3d74acf9a28c67741b2f4f2ea7635f0aaf6f0268`;
+- rows: **24,972** keyed by stable `image_id`;
+- dimension/dtype: **512 / float16**;
+- vectors are L2-normalized;
+- Parquet size: **24,354,633 bytes**;
+- measured build time: about **112.5 seconds** on the local CUDA device (~222 rows/second).
+
+The manifest records the exact model revision, Transformers/PyTorch versions, image preprocessing,
+source-metadata SHA256, output SHA256, and vector-norm range. A retrieval smoke check returned relevant
+spacecraft and Japanese bowl results for natural-language queries. This artifact is optional convenience
+data and can be replaced/versioned independently without changing the canonical image rows.
 
 ## Phases 13-14 — final QA and local release
 
@@ -302,12 +313,15 @@ directory itself.
 
 ## Phases 15-17 — publication assets and distribution plan
 
-`docs/KAGGLE_PAGE.md` contains the prepared Kaggle description and `notebooks/starter_eda.ipynb`
-contains a starter EDA/training-path notebook. These are included in the local release. External
-publication is deliberately separate and has not been triggered by the build scripts.
+`docs/KAGGLE_PAGE.md` contains the Kaggle description. `notebooks/search_25k_museum_images.ipynb`
+provides the intended first zero-shot sentence-retrieval demo using the optional CLIP embeddings, and
+`notebooks/starter_eda.ipynb` provides the lightweight EDA/training path. A deterministic 3x3 cover
+grid uses one release image from each broad category and has a source/selection manifest. These assets
+are included in the local release. Publication remains deliberately separate from the deterministic
+build scripts and is performed only by an explicit external CLI/API action.
 
 `docs/DISTRIBUTION.md` defines the versioning/subset strategy for Kaggle and a possible Hugging Face
-mirror while keeping optional embeddings separate.
+mirror while keeping model-derived embeddings explicitly optional.
 
 The generated audit files under `data/audits/`, metadata under `data/interim/`, and images under
 `data/images/` are local build artifacts and intentionally ignored by Git.

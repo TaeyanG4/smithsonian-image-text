@@ -211,12 +211,46 @@ def main() -> int:
         "KAGGLE_PAGE.md",
         "DISTRIBUTION.md",
         "examples/starter_eda.ipynb",
+        "examples/search_25k_museum_images.ipynb",
+        "cover_grid.jpg",
+        "cover_grid_manifest.json",
+        "dataset-metadata.json",
         "release_manifest.json",
         "checksums.sha256",
     ]
     missing_docs = [name for name in required_docs if not (args.release_dir / name).is_file()]
     if missing_docs:
         errors.append("MISSING_REQUIRED_RELEASE_DOCUMENTS")
+
+    embedding_report: dict[str, object] = {"included": False}
+    embedding_path = args.release_dir / "optional" / "clip_embeddings.parquet"
+    embedding_manifest_path = args.release_dir / "optional" / "clip_embeddings_manifest.json"
+    if embedding_path.is_file() or embedding_manifest_path.is_file():
+        embedding_report["included"] = True
+        if not embedding_path.is_file() or not embedding_manifest_path.is_file():
+            errors.append("INCOMPLETE_CLIP_EMBEDDING_ARTIFACT")
+        else:
+            embedding_table = pq.read_table(embedding_path, columns=["image_id", "embedding"])
+            embedding_ids = [int(value.as_py()) for value in embedding_table["image_id"]]
+            embedding_manifest = json.loads(embedding_manifest_path.read_text(encoding="utf-8"))
+            embedding_type = embedding_table.schema.field("embedding").type
+            dimension = getattr(embedding_type, "list_size", None)
+            embedding_report.update(
+                {
+                    "rows": embedding_table.num_rows,
+                    "unique_image_ids": len(set(embedding_ids)),
+                    "dimension": dimension,
+                    "model_id": embedding_manifest.get("model_id"),
+                    "model_revision": embedding_manifest.get("model_revision"),
+                    "dtype": embedding_manifest.get("embedding_dtype"),
+                }
+            )
+            if embedding_table.num_rows != len(rows):
+                errors.append("CLIP_EMBEDDING_ROW_COUNT_MISMATCH")
+            if set(embedding_ids) != set(image_ids):
+                errors.append("CLIP_EMBEDDING_IMAGE_ID_MISMATCH")
+            if dimension != int(embedding_manifest.get("embedding_dimension") or -1):
+                errors.append("CLIP_EMBEDDING_DIMENSION_MISMATCH")
 
     checksum_checked, checksum_failures = _verify_checksums(
         args.release_dir, args.release_dir / "checksums.sha256"
@@ -258,6 +292,7 @@ def main() -> int:
         "dimension_mismatches": dimension_mismatches,
         "line_counts": line_counts,
         "missing_required_documents": missing_docs,
+        "optional_clip_embeddings": embedding_report,
         "checksum_files_checked": checksum_checked,
         "checksum_failures": checksum_failures,
         "total_image_bytes": total_image_bytes,
