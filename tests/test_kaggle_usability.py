@@ -1,7 +1,9 @@
-from scripts.kaggle_usability import (
-    UPDATE_DATABUNDLE_METADATA_EXTERNAL,
-    build_browser_script,
-)
+import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+import scripts.kaggle_usability as ku
+from scripts.kaggle_usability import UPDATE_DATABUNDLE_METADATA_EXTERNAL, build_browser_script
 
 
 def test_browser_script_uses_same_origin_without_exporting_credentials() -> None:
@@ -30,3 +32,32 @@ def test_browser_script_does_not_log_cookie_values() -> None:
 
     assert "console.log(xsrf" not in script
     assert "console.log(cookieValue" not in script
+
+
+def test_select_metadata_path_matches_live_top_level_resources(monkeypatch) -> None:
+    with TemporaryDirectory(dir=ku.ROOT / "tmp_research") as temp_dir:
+        release_root = Path(temp_dir)
+        old_release = release_root / "museum-images"
+        new_release = release_root / "museum-images-v3-final"
+        old_release.mkdir()
+        new_release.mkdir()
+        (old_release / "dataset-metadata.json").write_text(
+            json.dumps({"resources": [{"path": "README.md"}, {"path": "legacy.csv"}]}),
+            encoding="utf-8",
+        )
+        expected = new_release / "dataset-metadata.json"
+        expected.write_text(
+            json.dumps({"resources": [{"path": "README.md"}, {"path": "metadata.parquet"}]}),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(ku, "RELEASE_ROOT", release_root)
+        context = ku.LiveContext(
+            dataset_id=1,
+            dataset_version_id=2,
+            databundle_version_id=3,
+            version_number=3,
+            root_firestore_path="root",
+            file_firestore_paths={"README.md": "r", "metadata.parquet": "m"},
+        )
+
+        assert ku.select_metadata_path(context) == expected

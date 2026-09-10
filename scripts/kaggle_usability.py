@@ -30,6 +30,7 @@ import requests
 
 ROOT = Path(__file__).resolve().parents[1]
 METADATA_PATH = ROOT / "data" / "release" / "museum-images" / "dataset-metadata.json"
+RELEASE_ROOT = ROOT / "data" / "release"
 AUDIT_PATH = ROOT / "tmp_research" / "kaggle_usability_audit.json"
 BROWSER_SCRIPT_PATH = ROOT / "tmp_research" / "kaggle_usability_browser_sync.js"
 
@@ -139,6 +140,49 @@ def _resources() -> dict[str, dict[str, Any]]:
     return result
 
 
+def _top_level_resource_names(path: Path) -> set[str]:
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    resources = raw.get("resources") or []
+    return {
+        str(item.get("path") or "")
+        for item in resources
+        if isinstance(item, dict)
+        and item.get("path")
+        and "/" not in str(item.get("path"))
+    }
+
+
+def select_metadata_path(context: LiveContext, explicit: Path | None = None) -> Path:
+    """Select local release metadata whose top-level resources match Kaggle.
+
+    Historical and presentation-only Kaggle versions can intentionally expose
+    different Data Explorer roots. Prefer an explicitly supplied metadata file;
+    otherwise choose the newest local release metadata whose top-level resource
+    set exactly matches the requested live version.
+    """
+
+    live_names = set(context.file_firestore_paths)
+    if explicit is not None:
+        candidate = explicit if explicit.is_absolute() else ROOT / explicit
+        candidate = candidate.resolve()
+        if not candidate.is_file():
+            raise KaggleUsabilityError(f"dataset metadata file not found: {candidate}")
+        return candidate
+
+    candidates = [
+        path
+        for path in RELEASE_ROOT.glob("museum-images*/dataset-metadata.json")
+        if path.is_file()
+    ]
+    matching = [path for path in candidates if _top_level_resource_names(path) == live_names]
+    if not matching:
+        raise KaggleUsabilityError(
+            "no local dataset-metadata.json matches the live Kaggle root files: "
+            f"{sorted(live_names)}"
+        )
+    return max(matching, key=lambda path: path.stat().st_mtime_ns)
+
+
 def _live_resources(context: LiveContext) -> dict[str, dict[str, Any]]:
     """Return local metadata for files Kaggle exposes at the Data Explorer root.
 
@@ -196,7 +240,18 @@ def latest_ready_version(session: _Session) -> int:
             versions.append(number)
     if not versions:
         raise KaggleUsabilityError("Kaggle has no READY dataset version")
-    return max(versions)
+    latest = max(versions)
+
+    # Kaggle's public history/read model can lag immediately after publication.
+    # Probe the next consecutive versions through the Data Explorer APIs so a
+    # newly READY version is not missed just because GetDatasetHistory is stale.
+    for candidate in range(latest + 1, latest + 11):
+        try:
+            load_live_context(session, version_number=candidate)
+        except KaggleUsabilityError:
+            break
+        latest = candidate
+    return latest
 
 
 def load_live_context(session: _Session, *, version_number: int) -> LiveContext:
@@ -283,20 +338,6 @@ def load_live_context(session: _Session, *, version_number: int) -> LiveContext:
     }
     if any(not value for value in file_paths.values()):
         raise KaggleUsabilityError("Data Explorer returned a file without Firestore path")
-    resources = _resources()
-    live_names = set(file_paths)
-    missing_files = live_names - set(resources)
-    missing_top_level = {
-        name for name in resources if "/" not in name and name not in live_names
-    }
-    if missing_files or missing_top_level:
-        raise KaggleUsabilityError(
-            "live Kaggle file set does not match dataset-metadata.json: "
-            f"missing_local={sorted(missing_files)}, "
-            f"missing_live_top_level={sorted(missing_top_level)}, "
-            f"live={sorted(file_paths)}"
-        )
-
     return LiveContext(
         dataset_id=dataset_id,
         dataset_version_id=dataset_version_id,
@@ -435,9 +476,11 @@ def get_coverage(session: _Session, context: LiveContext) -> dict[str, Any]:
         live_descriptions[name] == str(resource.get("description") or "")
         for name, resource in resources.items()
     )
+    present_files = sum(bool(live_descriptions[name].strip()) for name in resources)
 
     target_columns = 0
     exact_columns = 0
+    present_columns = 0
     per_table: dict[str, dict[str, int]] = {}
     for name, resource in resources.items():
         fields = (resource.get("schema") or {}).get("fields") or []
@@ -457,24 +500,31 @@ def get_coverage(session: _Session, context: LiveContext) -> dict[str, Any]:
         if live_names != expected_names:
             raise KaggleUsabilityError(f"{name}: columns changed during coverage check")
         exact = 0
+        present = 0
         for item, field in zip(live, fields, strict=True):
             info = item.get("tableColumnInfo")
             nested = info.get("description") if isinstance(info, dict) else None
             live_description = str(item.get("description") or nested or "")
+            if live_description.strip():
+                present += 1
             if live_description == str(field.get("description") or field.get("title") or ""):
                 exact += 1
         target_columns += len(fields)
         exact_columns += exact
-        per_table[name] = {"exact": exact, "target": len(fields)}
+        present_columns += present
+        per_table[name] = {"present": present, "exact": exact, "target": len(fields)}
 
     return {
+        "present_file_descriptions": present_files,
         "exact_file_descriptions": exact_files,
         "target_file_descriptions": len(resources),
+        "present_column_descriptions": present_columns,
         "exact_column_descriptions": exact_columns,
         "target_column_descriptions": target_columns,
-        "file_descriptions_complete": exact_files == len(resources),
-        "column_descriptions_complete": exact_columns == target_columns,
-        "metadata_complete": exact_files == len(resources) and exact_columns == target_columns,
+        "file_descriptions_complete": present_files == len(resources),
+        "column_descriptions_complete": present_columns == target_columns,
+        "metadata_complete": present_files == len(resources) and present_columns == target_columns,
+        "metadata_exact": exact_files == len(resources) and exact_columns == target_columns,
         "per_table": per_table,
     }
 
@@ -568,6 +618,14 @@ def parse_args() -> argparse.Namespace:
         help="Dataset version to audit; defaults to the latest READY version in Kaggle history.",
     )
     parser.add_argument(
+        "--metadata-path",
+        type=Path,
+        help=(
+            "Local dataset-metadata.json to validate against the selected Kaggle version. "
+            "By default the newest matching release metadata is selected automatically."
+        ),
+    )
+    parser.add_argument(
         "--apply",
         action="store_true",
         help="Attempt authenticated Data Explorer metadata writes after validation.",
@@ -586,10 +644,12 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
+    global METADATA_PATH
     args = parse_args()
     public = requests.Session()
     version_number = args.dataset_version or latest_ready_version(public)
     context = load_live_context(public, version_number=version_number)
+    METADATA_PATH = select_metadata_path(context, args.metadata_path)
     plan = build_update_plan(public, context)
     before = get_coverage(public, context)
     usability = get_usability(public)
@@ -608,6 +668,7 @@ def main() -> int:
             "databundle_version_id": context.databundle_version_id,
             "version_number": context.version_number,
         },
+        "metadata_path": str(METADATA_PATH),
         "plan": {
             "files": len(plan),
             "columns": sum(len(item["columns"]) for item in plan),
