@@ -1,0 +1,26 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "smithsonian-image-text"
+version = "0.1.0"
+description = "Reproducible pipeline for a rights-safe Smithsonian image-text Kaggle dataset"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "requests>=2.32,<3",
+  "PyYAML>=6.0,<7",
+]
+
+[project.optional-dependencies]
+data = ["pyarrow>=17,<20"]
+dev = ["pytest>=8,<9", "ruff>=0.6,<1"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

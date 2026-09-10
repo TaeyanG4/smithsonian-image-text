@@ -1,0 +1,54 @@
+project:
+  name: smithsonian-image-text
+  dataset_title: "25K Museum Images with Captions"
+  target_final_images: 25000
+  min_final_images: 20000
+  starter_images: 5000
+  max_side_px: 512
+  target_package_gb: 4.0
+  hard_cap_gb: 5.0
+  rebuild_target_hours: 8
+
+sources:
+  bulk_index_url: "https://smithsonian-open-access.s3-us-west-2.amazonaws.com/metadata/edan/index.txt"
+  api_base_url: "https://api.si.edu/openaccess/api/v1.0"
+  ids_host: "ids.si.edu"
+
+metadata_discovery:
+  min_candidates: 50000
+  target_candidates: 80000
+  max_candidates: 100000
+  deterministic_seed: "smithsonian-image-text-v1"
+  max_shards_per_unit: 64
+  request_timeout_seconds: 60
+  max_candidates_per_unit: 12000
+  smoke_units:
+    - CHNDM
+    - FSG
+    - NMAH
+    - NMNHPALEO
+  preferred_units:
+    - CHNDM
+    - FSG
+    - HMSG
+    - SAAM
+    - NMAH
+    - NASM
+    - NPM
+    - HAC
+    - NZP
+    - NMNHPALEO
+    - NMNHMINSCI
+    - NMNHBIRDS
+    - NMNHMAMMALS
+    - NMNHENTO
+    - NMNHFISHES
+    - NMNHBOTANY
+    - NMNHEDUCATION
+
+api:
+  key_env_var: SMITHSONIAN_API_KEY
+  rows_per_request: 100
+  sort: id
+  type: edanmdm
+  row_group: objects

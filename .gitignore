@@ -1,0 +1,33 @@
+﻿# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Secrets
+.env
+.env.*
+*.key
+kaggle.json
+
+# Research scratch
+tmp_research/
+
+# Dataset outputs (keep directory placeholders only)
+data/raw_metadata/*
+data/interim/*
+data/images/*
+data/audits/*
+data/release/*
+!data/raw_metadata/.gitkeep
+!data/interim/.gitkeep
+!data/images/.gitkeep
+!data/audits/.gitkeep
+!data/release/.gitkeep
+
+# Local artifacts
+*.parquet
+*.ndjson.gz
+*.jsonl.gz
+*.part

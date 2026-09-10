@@ -1,0 +1,26 @@
+# Phase 4 must refine this after candidate distributions are measured.
+categories:
+  art_design:
+    unit_codes: [CHNDM, FSG, HMSG, SAAM, NMAFA]
+    keywords: [painting, sculpture, drawing, print, textile, ceramic, furniture, design]
+  natural_history:
+    unit_codes: [NMNHPALEO, NMNHMINSCI, NMNHBIRDS, NMNHMAMMALS, NMNHENTO, NMNHFISHES, NMNHBOTANY]
+    keywords: [fossil, mineral, bird, mammal, insect, fish, plant, specimen]
+  science_technology:
+    unit_codes: [NASM, NMAH]
+    keywords: [spacecraft, aircraft, instrument, machine, engine, technology, science]
+  historical_objects:
+    unit_codes: [NMAH]
+    keywords: [artifact, history, military, political, domestic]
+  archaeology:
+    unit_codes: []
+    keywords: [archaeology, archaeological, excavated]
+  space_aviation:
+    unit_codes: [NASM]
+    keywords: [space, spacecraft, aviation, aircraft, rocket, satellite]
+  coins_stamps_documents:
+    unit_codes: [NPM, NMAH]
+    keywords: [coin, currency, stamp, postal, document, letter]
+  other:
+    unit_codes: [HAC, NZP, NMNHEDUCATION]
+    keywords: []

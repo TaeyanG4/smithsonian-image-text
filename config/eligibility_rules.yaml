@@ -1,0 +1,78 @@
+rights:
+  accepted_metadata_access: [CC0]
+  accepted_media_access: [CC0]
+  accepted_media_types: [Images]
+  rejected_media_access:
+    - "Usage conditions apply"
+    - "Not determined"
+    - ""
+  review_context_terms:
+    - usage conditions apply
+    - not determined
+    - all rights reserved
+    - permission required
+    - restrictions apply
+
+required:
+  object_id: true
+  media_id: true
+  source_url: true
+  media_url: true
+
+text:
+  reject_exact_casefold:
+    - untitled
+    - unknown
+    - no description
+  minimum_non_id_fields: 2
+  useful_fields:
+    - title
+    - description
+    - object_type
+    - media_caption
+    - scientific_name
+    - physical_description
+    - date
+    - topics
+    - creator
+    - place
+
+sensitive_review:
+  # Review triggers, not assertions that an item is sensitive.
+  unit_codes: [NMAI, NMNHANTHRO, NAA, HSFA]
+  modern_portrait_unit_codes: [NPG]
+  review_keywords:
+    - human remains
+    - human remain
+    - funerary
+    - funeral
+    - burial
+    - grave
+    - sacred
+    - ceremonial
+    - ritual
+    - medicine bundle
+    - mummy
+    - mummified
+    - skull
+    - cranium
+    - ancestor
+    - mortuary
+    - repatriation
+    - nagpra
+  modern_portrait_keywords:
+    - portrait
+    - photograph
+    - photographic print
+    - photographic negative
+  action: review_required
+
+rejection_codes:
+  - NO_CC0_METADATA
+  - NO_CC0_MEDIA
+  - NO_IMAGE
+  - RIGHTS_UNCLEAR
+  - RIGHTS_CONTEXT_REVIEW
+  - LOW_TEXT_QUALITY
+  - LOW_RESOLUTION
+  - SENSITIVE_REVIEW
