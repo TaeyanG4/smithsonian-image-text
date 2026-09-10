@@ -208,6 +208,9 @@ def main() -> int:
         "RIGHTS_POLICY.md",
         "DATA_DICTIONARY.md",
         "COLLECTION_REPORT.md",
+        "KAGGLE_PAGE.md",
+        "DISTRIBUTION.md",
+        "examples/starter_eda.ipynb",
         "release_manifest.json",
         "checksums.sha256",
     ]
@@ -223,6 +226,12 @@ def main() -> int:
 
     release_bytes = sum(path.stat().st_size for path in args.release_dir.rglob("*") if path.is_file())
     release_gb = release_bytes / 1_000_000_000
+    release_manifest = json.loads(
+        (args.release_dir / "release_manifest.json").read_text(encoding="utf-8")
+    )
+    manifest_release_bytes = release_manifest.get("apparent_release_bytes")
+    if manifest_release_bytes != release_bytes:
+        errors.append("RELEASE_MANIFEST_SIZE_MISMATCH")
     if release_gb > float(project["hard_cap_gb"]):
         errors.append("RELEASE_EXCEEDS_HARD_CAP")
     category_counts = Counter(str(row.get("category")) for row in rows)
@@ -254,6 +263,7 @@ def main() -> int:
         "total_image_bytes": total_image_bytes,
         "release_bytes": release_bytes,
         "release_gb": release_gb,
+        "manifest_release_bytes": manifest_release_bytes,
         "target_package_gb": float(project["target_package_gb"]),
         "hard_cap_gb": float(project["hard_cap_gb"]),
         "category_distribution": dict(category_counts),

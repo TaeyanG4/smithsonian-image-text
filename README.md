@@ -19,7 +19,8 @@ Reproducible tooling for a Kaggle-ready Smithsonian Open Access image-text datas
 
 The local V1 build has progressed through discovery, filtering, balanced selection, the mandatory
 1K image pilot, production collection, image QA, deterministic text composition, object-level
-splitting, and the 5K starter subset. External Kaggle publication has **not** been performed.
+splitting, the 5K starter subset, and final release validation. External Kaggle publication has
+**not** been performed.
 
 Current build summary (2026-09-10):
 
@@ -38,6 +39,10 @@ Current build summary (2026-09-10):
   retained rows, and is capped at 512 characters while the full source `description` stays intact.
 - Phase 10: **19,979 train / 2,498 validation / 2,495 test** rows with zero `object_id` overlap.
 - Phase 11: balanced **5,000-row** starter subset from **4,621** objects, inheriting the same split.
+- Phase 13/14 local release: **PASS**, 24,972 main rows + 5,000 starter rows, zero missing/decode/
+  dimension/rights/split-leakage/checksum failures, final apparent package about **1.036 GB**.
+- Phase 15/16: Kaggle page copy and a starter EDA notebook are prepared locally; publication remains a
+  separate explicit external action.
 
 Important findings and decisions are documented in:
 
@@ -45,6 +50,7 @@ Important findings and decisions are documented in:
 - `docs/RIGHTS_POLICY.md`
 - `docs/SCHEMA_RESEARCH.md`
 - `docs/DISCOVERY_STRATEGY.md`
+- `docs/DISTRIBUTION.md`
 
 Machine-readable controls live in `config/collection.yaml` and `config/eligibility_rules.yaml`.
 
@@ -98,6 +104,9 @@ discover_metadata.py -> build_candidate_tables.py -> select_candidates.py
 -> build_metadata.py -> create_splits.py -> build_starter.py
 -> build_release.py -> validate_release.py
 ```
+
+Phase 12 embeddings are intentionally omitted from the base V1 package. They can be distributed as a
+separate optional artifact later without making every image-only/text-only user download them.
 
 ## Repository layout
 

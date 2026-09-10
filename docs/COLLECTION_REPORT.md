@@ -2,8 +2,8 @@
 
 Probe date: **2026-09-10**
 
-Status: **Phases 0-11 completed locally. The 1K pilot passed before production collection. Final local
-release packaging/validation is the next step; no Kaggle publication has been performed.**
+Status: **Local V1 build and release validation complete. The 1K pilot passed before production
+collection. No Kaggle publication has been performed.**
 
 ## What was actually executed
 
@@ -268,6 +268,46 @@ and matches 20% of the full selection category quota: 800 Art, 1,000 Natural His
 Technology, 700 Historical Objects, 180 Archaeology, 340 Space & Aviation, 700 Design, 500
 Coins/Stamps/Documents, and 300 Other. It inherits the full dataset split assignment and has zero
 object-level split leakage.
+
+## Phase 12 — optional embeddings
+
+Embeddings are intentionally **omitted from the base V1 package**. The package already exposes stable
+`image_id`, `file_name`, `model_text`, split, SHA256, and pHash fields, so CLIP/SigLIP or other
+embeddings can be produced later as a versioned side artifact. Keeping them separate avoids increasing
+the default download for users who only need images and metadata.
+
+## Phases 13-14 — final QA and local release
+
+The local release was built at `data/release/museum-images/` and then validated from that release tree,
+not merely from the working/interim files. The first final validator run returned **PASS**:
+
+- main rows / unique image IDs / unique filenames: **24,972 / 24,972 / 24,972**;
+- starter rows: **5,000** and every starter identity is a subset of the full metadata;
+- missing `source_url`: **0**;
+- missing `object_id`: **0**;
+- non-CC0 convenience/source-rights rows: **0**;
+- usable `model_text`: **100%**;
+- full and starter object-level split leakage: **0**;
+- missing main/starter image files: **0**;
+- release-image decode failures: **0**;
+- dimension mismatches: **0**;
+- full CSV/JSONL row counts match Parquet exactly;
+- required release docs: complete;
+- checksum files verified: **29,989**, failures **0**;
+- final measured release size: about **1.036 GB**, safely below the 4 GB target and 5 GB hard cap.
+
+The release builder is configured to record the exact final apparent byte count, including
+`checksums.sha256`, in `release_manifest.json`; the validator checks that value against the release
+directory itself.
+
+## Phases 15-17 — publication assets and distribution plan
+
+`docs/KAGGLE_PAGE.md` contains the prepared Kaggle description and `notebooks/starter_eda.ipynb`
+contains a starter EDA/training-path notebook. These are included in the local release. External
+publication is deliberately separate and has not been triggered by the build scripts.
+
+`docs/DISTRIBUTION.md` defines the versioning/subset strategy for Kaggle and a possible Hugging Face
+mirror while keeping optional embeddings separate.
 
 The generated audit files under `data/audits/`, metadata under `data/interim/`, and images under
 `data/images/` are local build artifacts and intentionally ignored by Git.

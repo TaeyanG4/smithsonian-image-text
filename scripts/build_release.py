@@ -48,6 +48,15 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _predicted_checksum_bytes(output_dir: Path, targets: list[Path]) -> int:
+    """Return exact ASCII byte size of checksums.sha256 before hashing file contents."""
+    total = 0
+    for path in targets:
+        relative = path.relative_to(output_dir).as_posix()
+        total += len(("0" * 64 + "  " + relative + "\n").encode("ascii"))
+    return total
+
+
 def _git_commit() -> str | None:
     result = subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True, check=False
@@ -213,6 +222,7 @@ def main() -> int:
         "DATA_DICTIONARY.md",
         "COLLECTION_REPORT.md",
         "KAGGLE_PAGE.md",
+        "DISTRIBUTION.md",
     ):
         shutil.copy2(ROOT / "docs" / source_name, args.output_dir / source_name)
     example_notebook = ROOT / "notebooks" / "starter_eda.ipynb"
@@ -260,9 +270,9 @@ def main() -> int:
         "split_distribution": dict(split_counts),
         "total_image_bytes": image_bytes,
         "starter_image_bytes": starter_image_bytes,
-        "non_image_bytes": non_image_bytes,
-        "apparent_release_bytes": image_bytes + starter_image_bytes + non_image_bytes,
-        "apparent_release_gb": (image_bytes + starter_image_bytes + non_image_bytes) / 1_000_000_000,
+        "non_image_bytes_before_manifest_and_checksums": non_image_bytes,
+        "apparent_release_bytes": None,
+        "apparent_release_gb": None,
         "pipeline_git_commit": _git_commit(),
         "image_max_side_px": int(config["project"]["max_side_px"]),
         "rights": "CC0 media + CC0 metadata automatic inclusion gate",
@@ -281,9 +291,31 @@ def main() -> int:
         "checksums_file": "checksums.sha256",
     }
     manifest_path = args.output_dir / "release_manifest.json"
+    checksum_path = args.output_dir / "checksums.sha256"
     manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
 
-    checksum_path = args.output_dir / "checksums.sha256"
+    # The checksum file is excluded from its own hash list, and each checksum line has a fixed-size
+    # digest. That lets the manifest record the exact final apparent release size before checksums are
+    # written, while still allowing release_manifest.json itself to be checksummed exactly once.
+    for _ in range(5):
+        checksum_targets = sorted(
+            path
+            for path in args.output_dir.rglob("*")
+            if path.is_file() and path != checksum_path
+        )
+        pre_checksum_bytes = sum(path.stat().st_size for path in checksum_targets)
+        predicted_checksum_bytes = _predicted_checksum_bytes(args.output_dir, checksum_targets)
+        final_release_bytes = pre_checksum_bytes + predicted_checksum_bytes
+        if manifest["apparent_release_bytes"] == final_release_bytes:
+            break
+        manifest["apparent_release_bytes"] = final_release_bytes
+        manifest["apparent_release_gb"] = final_release_bytes / 1_000_000_000
+        manifest_path.write_text(
+            json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+    else:
+        raise RuntimeError("Release size manifest did not converge")
+
     checksum_targets = sorted(
         path
         for path in args.output_dir.rglob("*")
@@ -294,6 +326,15 @@ def main() -> int:
             stream.write(f"{_sha256(path)}  {path.relative_to(args.output_dir).as_posix()}\n")
             if index % 5000 == 0:
                 print(f"checksums {index}/{len(checksum_targets)}", flush=True)
+
+    actual_release_bytes = sum(
+        path.stat().st_size for path in args.output_dir.rglob("*") if path.is_file()
+    )
+    if actual_release_bytes != manifest["apparent_release_bytes"]:
+        raise RuntimeError(
+            "Final release byte count differs from manifest: "
+            f"actual={actual_release_bytes} manifest={manifest['apparent_release_bytes']}"
+        )
 
     print(json.dumps(manifest, indent=2, ensure_ascii=False))
     return 0
