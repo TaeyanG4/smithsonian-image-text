@@ -85,4 +85,3 @@ For every published version retain:
 The completed V1 large discovery predates direct per-shard content-hash capture. Its candidate-producing
 raw source records and local outputs are hashed, and the original shard URLs are retained. New discovery
 runs already capture source-index and downloaded-shard ETag/Last-Modified/byte-count/SHA256 directly.
-
