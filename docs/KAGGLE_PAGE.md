@@ -1,18 +1,18 @@
-# Kaggle Page Draft — 25K Museum Images with Captions
+# Smithsonian 25K Museum Image-Text Dataset
 
 ## Title
 
-**25K Museum Images with Captions**
+**Smithsonian 25K Museum Image-Text Dataset**
 
 ## Subtitle
 
-CC0 Smithsonian images and authoritative metadata for computer vision, CLIP, and VLM workflows
+24,972 CC0 images, rich metadata, leakage-safe splits and a 5K starter set
 
 ## Short description
 
-24,972 cleaned 2D Smithsonian Open Access images with authoritative object metadata, deterministic
-model-ready text, nine broad sampling categories, object-level train/validation/test splits, and a
-balanced 5,000-image starter subset.
+24,972 cleaned 2D Smithsonian Open Access images paired with authoritative object metadata and
+deterministic model-ready text. V1 includes nine broad sampling categories, leakage-safe object-level
+train/validation/test splits, and a balanced 5,000-image starter subset for fast notebooks.
 
 ## Why this dataset
 
@@ -39,12 +39,22 @@ minimum resolution gate.
 - `SOURCES.md`, `RIGHTS_POLICY.md`, `DATA_DICTIONARY.md`, `COLLECTION_REPORT.md` — provenance and
   methodology.
 - `provenance/local_snapshot_manifest.json` — hashes pinning the local metadata snapshot used for V1.
-- `optional/clip_embeddings.parquet` — 512-dimensional normalized float16 CLIP image embeddings
-  (Kaggle upload: `optional.zip`).
-- `optional/clip_embeddings_manifest.json` — exact model revision and preprocessing provenance.
 - `checksums.sha256` — release-file checksums.
 - `examples/starter_eda.ipynb` — starter exploration notebook.
-- `examples/search_25k_museum_images.ipynb` — zero-shot sentence-to-image retrieval demo.
+
+Model-derived embeddings are deliberately **not included in the base V1 download**. They are treated
+as a separately versioned side artifact so the canonical image/metadata dataset stays lightweight,
+reproducible, and independent of any one model family.
+
+## Quick start
+
+For tabular work, start with `metadata.parquet`. Join an image with its row using `file_name`. Use
+`model_text` as a compact text input and preserve `object_id` whenever you resample or evaluate so
+multiple views of the same museum object remain grouped.
+
+The included starter notebook demonstrates loading the Kaggle ZIP layout, checking the CC0 and split
+invariants, plotting category counts, and previewing image-text pairs. The balanced `starter_5k` subset
+is intended for quick EDA and prototyping before moving to all 24,972 rows.
 
 ## Categories
 
@@ -105,6 +115,17 @@ ambiguous/sensitive-review rows from automatic release, but downstream users rem
 their own use context. See `RIGHTS_POLICY.md` and `SOURCES.md` for the exact policy and official source
 links.
 
+## Source and provenance
+
+The source of truth is Smithsonian Open Access metadata plus the exact selected Smithsonian image
+media item. V1 was built from official Smithsonian bulk/EDAN metadata and official media URLs, with
+stable object/media identifiers and source URLs retained in the release. The pipeline performs rights
+gating before selection, validates downloaded image bytes, keeps exact checksums, and records a local
+snapshot manifest so rows can be traced back to upstream Smithsonian records.
+
+The build pipeline and methodology are published at
+`https://github.com/TaeyanG4/smithsonian-image-text`.
+
 ## Suggested uses
 
 - image-text retrieval and CLIP-style baselines;
@@ -117,7 +138,8 @@ links.
 
 - 3D assets, audio, or video;
 - bulk OCR/document corpora;
-- embeddings as a source-of-truth field (the included CLIP file is optional convenience data);
+- model-derived embeddings in the base dataset (a separately versioned side-artifact strategy is
+  documented in the repository);
 - free-form generated captions;
 - rows requiring manual sensitive/rights review.
 
@@ -126,3 +148,19 @@ links.
 The repository uses deterministic shard ordering, category sampling, image IDs, starter sampling, and
 object-level splits. Source URLs, Smithsonian identifiers, checksums, rights fields, and audit reports
 are preserved so a row can be traced back to its upstream record and media item.
+
+## Acknowledgements
+
+All source images and metadata in the automatic release come from Smithsonian Open Access records and
+media that report CC0 access under the V1 eligibility policy. Smithsonian remains the authoritative
+source for object context and identifiers; this project contributes deterministic filtering,
+selection, normalization, packaging, QA, and split logic.
+
+## Ideas to explore
+
+- How well do general-purpose vision models transfer across art, natural history, design, technology,
+  archaeology, and space objects in one rights-consistent corpus?
+- How different are retrieval or classification results when using concise `model_text` versus richer
+  source metadata fields?
+- Which institutions or categories show the strongest multi-view effects, and how much does
+  object-level leakage change evaluation results?

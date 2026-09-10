@@ -20,6 +20,56 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 
+KAGGLE_TITLE = "Smithsonian 25K Museum Image-Text Dataset"
+KAGGLE_SUBTITLE = "24,972 CC0 images, rich metadata, leakage-safe splits and a 5K starter set"
+KAGGLE_ID = "taeyangg4/smithsonian-25k-museum-image-text"
+
+KAGGLE_FIELD_DESCRIPTIONS = {
+    "image_id": "Stable integer image identifier assigned by this release pipeline.",
+    "object_id": "Stable Smithsonian object grouping key; all views of one object stay in one split.",
+    "media_id": "Identifier for the individual Smithsonian media item / image view.",
+    "file_name": "Normalized JPEG filename inside images/ or images.zip.",
+    "title": "Authoritative Smithsonian object title/name when available.",
+    "description": "Authoritative Smithsonian descriptive text when available.",
+    "model_text": "Deterministic <=512-character composition of Smithsonian metadata for model input.",
+    "text_source": "Provenance label for model_text; fixed to smithsonian_metadata_composed in V1.",
+    "category": "Human-readable broad sampling category assigned deterministically by this project.",
+    "category_code": "Machine-friendly code for the broad project sampling category.",
+    "object_type": "Smithsonian object/type terms.",
+    "institution": "Smithsonian owning/source institution or unit name.",
+    "collection": "Smithsonian collection/set name when available.",
+    "creator": "Creator, maker, artist, or equivalent source role when available.",
+    "related_names": "Other authoritative related names from Smithsonian metadata.",
+    "date": "Authoritative source date text; intentionally not forced to ISO format.",
+    "place": "Place terms from Smithsonian metadata when available.",
+    "topics": "Topic terms from Smithsonian metadata when available.",
+    "culture": "Culture terms from Smithsonian metadata when available.",
+    "scientific_name": "Scientific or taxonomic name when supplied by Smithsonian.",
+    "physical_description": "Physical description, medium, or materials text when available.",
+    "credit_line": "Smithsonian credit line when available.",
+    "media_caption": "Smithsonian-supplied media caption when present.",
+    "alt_text": "Smithsonian accessibility alt text when present.",
+    "media_description": "Smithsonian media-level extended accessibility description when present.",
+    "width": "Final normalized JPEG width in pixels.",
+    "height": "Final normalized JPEG height in pixels.",
+    "aspect_ratio": "Final image width divided by height.",
+    "source_url": "Official Smithsonian object/source URL.",
+    "media_url": "Official media content URL exactly as supplied by Smithsonian.",
+    "image_url": "Preferred approximately 512 px Smithsonian image request URL used for collection.",
+    "rights": "Convenience rights value; CC0 for every released V1 row.",
+    "metadata_rights": "Record metadata usage access value; must be exact CC0 for automatic inclusion.",
+    "media_rights": "Exact selected media usage access value; must be exact CC0 for automatic inclusion.",
+    "object_rights": "Additional object-rights statements supplied in Smithsonian free text.",
+    "record_guid": "Smithsonian object ARK/GUID when present.",
+    "media_guid": "Smithsonian media ARK/GUID when present.",
+    "unit_code": "Smithsonian source unit code.",
+    "sha256": "SHA-256 checksum of the final normalized JPEG bytes.",
+    "phash": "64-bit DCT perceptual hash encoded as 16 hexadecimal characters.",
+    "final_bytes": "Final normalized JPEG size in bytes.",
+    "qa_flags": "Non-fatal image QA review flags; blank when none apply.",
+    "split": "Leakage-safe train, validation, or test split assigned at object_id group level.",
+}
+
 
 def _link_or_copy(source: Path, destination: Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -71,9 +121,9 @@ def _load_json(path: Path) -> dict:
 
 
 def _write_readme(path: Path, *, final_count: int, starter_count: int) -> None:
-    text = f"""# 25K Museum Images with Captions
+    text = f"""# Smithsonian 25K Museum Image-Text Dataset
 
-CC0 Smithsonian images and authoritative metadata for computer vision, CLIP and VLM workflows.
+CC0 Smithsonian images and authoritative metadata for computer vision and multimodal workflows.
 
 This release contains **{final_count:,}** cleaned 2D image-text rows plus a **{starter_count:,}**-image
 starter subset. Images are normalized to a maximum side of 512 px. The `model_text` field is
@@ -88,9 +138,12 @@ human-written visual caption.
 - `captions.jsonl`: image IDs, filenames, and model-ready text.
 - `splits.csv`: object-level leakage-safe train/validation/test split assignments.
 - `starter_5k/`: balanced starter subset using the same schema and split assignments.
-- `optional/clip_embeddings.parquet`: optional normalized CLIP image embeddings for fast retrieval.
 - `SOURCES.md`, `RIGHTS_POLICY.md`, `DATA_DICTIONARY.md`: source, rights, and field documentation.
 - `release_manifest.json` and `checksums.sha256`: release audit information.
+
+CLIP embeddings are intentionally **not** part of the base V1 package. The repository contains an
+optional builder and side-artifact strategy so model-derived features can be versioned independently
+without inflating or coupling the canonical image release.
 
 ## Rights
 
@@ -107,20 +160,97 @@ views of one object cannot leak across train, validation, and test.
     path.write_text(text, encoding="utf-8")
 
 
-def _write_kaggle_metadata(path: Path, *, description: str) -> None:
+def _kaggle_type(field_type: str) -> str:
+    if field_type.startswith("int"):
+        return "integer"
+    if field_type in {"double", "float", "float32", "float64"}:
+        return "numeric"
+    return "string"
+
+
+def _table_schema_fields(table_path: Path, fields: list[str] | None = None) -> list[dict[str, str]]:
+    schema = pq.read_schema(table_path)
+    selected = set(fields) if fields is not None else None
+    result: list[dict[str, str]] = []
+    for field in schema:
+        if selected is not None and field.name not in selected:
+            continue
+        result.append(
+            {
+                "name": field.name,
+                "description": KAGGLE_FIELD_DESCRIPTIONS.get(
+                    field.name, "Field documented in DATA_DICTIONARY.md."
+                ),
+                "type": _kaggle_type(str(field.type)),
+            }
+        )
+    return result
+
+
+def _write_kaggle_metadata(path: Path, *, description: str, metadata_path: Path) -> None:
+    metadata_schema = _table_schema_fields(metadata_path)
+    split_fields = ["image_id", "object_id", "file_name", "category", "split"]
+    split_schema = [field for field in metadata_schema if field["name"] in split_fields]
     payload = {
-        "title": "25K Museum Images with Captions",
-        "subtitle": "CC0 Smithsonian images and metadata for computer vision, CLIP and VLMs",
+        "title": KAGGLE_TITLE,
+        "subtitle": KAGGLE_SUBTITLE,
         "description": description,
-        "id": "taeyangg4/25k-museum-images-with-captions",
+        "id": KAGGLE_ID,
         "licenses": [{"name": "CC0-1.0"}],
-        "keywords": ["computer vision", "art", "deep learning", "image classification"],
-        "image": "cover_grid.jpg",
+        "keywords": ["computer vision", "art", "deep learning", "image classification", "nlp"],
+        "image": "dataset-cover-image.jpg",
+        "expectedUpdateFrequency": "never",
+        "userSpecifiedSources": (
+            "[Smithsonian Open Access](https://www.si.edu/openaccess) bulk/EDAN metadata and official "
+            "Smithsonian image media. Every automatically released row requires both record metadata "
+            "and the exact selected media item to report CC0 access. Stable Smithsonian identifiers, "
+            "source URLs, rights fields, checksums, and build provenance are retained. Reproducible "
+            "pipeline: https://github.com/TaeyanG4/smithsonian-image-text"
+        ),
         "resources": [
-            {"path": "metadata.parquet", "description": "Canonical metadata for all release rows."},
-            {"path": "metadata.csv", "description": "CSV convenience export of the metadata."},
-            {"path": "captions.jsonl", "description": "Deterministic model-ready Smithsonian metadata text."},
-            {"path": "splits.csv", "description": "Object-level leakage-safe train/validation/test splits."},
+            {
+                "path": "metadata.parquet",
+                "description": "Canonical metadata table for all 24,972 released image rows.",
+                "schema": {"fields": metadata_schema},
+            },
+            {
+                "path": "metadata.csv",
+                "description": "CSV convenience export with the same rows and columns as metadata.parquet.",
+                "schema": {"fields": metadata_schema},
+            },
+            {
+                "path": "captions.jsonl",
+                "description": "Compact image_id/file_name/object_id plus deterministic Smithsonian model_text.",
+            },
+            {
+                "path": "splits.csv",
+                "description": "Object-level leakage-safe train/validation/test assignments.",
+                "schema": {"fields": split_schema},
+            },
+            {
+                "path": "images.zip",
+                "description": "24,972 normalized JPEGs, maximum side 512 px, keyed by file_name.",
+            },
+            {
+                "path": "starter_5k.zip",
+                "description": "Balanced 5,000-image quick-start subset with matching metadata and splits.",
+            },
+            {
+                "path": "README.md",
+                "description": "Release overview and quick file guide.",
+            },
+            {
+                "path": "DATA_DICTIONARY.md",
+                "description": "Detailed field definitions and source/derivation notes.",
+            },
+            {
+                "path": "RIGHTS_POLICY.md",
+                "description": "Exact CC0 eligibility gate and responsible-use caveats.",
+            },
+            {
+                "path": "SOURCES.md",
+                "description": "Official Smithsonian source and provenance documentation.",
+            },
         ],
     }
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -177,6 +307,11 @@ def main() -> int:
         "--clip-embeddings-manifest",
         type=Path,
         default=ROOT / "data" / "audits" / "clip_embeddings_manifest.json",
+    )
+    parser.add_argument(
+        "--include-clip-embeddings",
+        action="store_true",
+        help="Opt in to packaging the optional CLIP side artifact. Base V1 intentionally omits it.",
     )
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
@@ -255,14 +390,13 @@ def main() -> int:
         "DISTRIBUTION.md",
     ):
         shutil.copy2(ROOT / "docs" / source_name, args.output_dir / source_name)
-    for source_name in ("cover_grid.jpg", "cover_grid_manifest.json"):
+    for source_name in ("dataset-cover-image.jpg", "cover_grid_manifest.json"):
         source = ROOT / "docs" / source_name
         if source.is_file():
             shutil.copy2(source, args.output_dir / source_name)
-    example_notebooks = [
-        ROOT / "notebooks" / "starter_eda.ipynb",
-        ROOT / "notebooks" / "search_25k_museum_images.ipynb",
-    ]
+    example_notebooks = [ROOT / "notebooks" / "starter_eda.ipynb"]
+    if args.include_clip_embeddings:
+        example_notebooks.append(ROOT / "notebooks" / "search_25k_museum_images.ipynb")
     examples_dir = args.output_dir / "examples"
     for example_notebook in example_notebooks:
         if example_notebook.is_file():
@@ -273,7 +407,7 @@ def main() -> int:
         provenance_dir.mkdir(parents=True, exist_ok=True)
         shutil.copy2(args.snapshot_manifest, provenance_dir / args.snapshot_manifest.name)
     clip_manifest: dict = {}
-    if args.clip_embeddings.is_file():
+    if args.include_clip_embeddings and args.clip_embeddings.is_file():
         optional_dir = args.output_dir / "optional"
         optional_dir.mkdir(parents=True, exist_ok=True)
         shutil.copy2(args.clip_embeddings, optional_dir / "clip_embeddings.parquet")
@@ -285,7 +419,11 @@ def main() -> int:
             clip_manifest = _load_json(args.clip_embeddings_manifest)
     _write_readme(args.output_dir / "README.md", final_count=len(rows), starter_count=len(starter_rows))
     kaggle_description = (ROOT / "docs" / "KAGGLE_PAGE.md").read_text(encoding="utf-8")
-    _write_kaggle_metadata(args.output_dir / "dataset-metadata.json", description=kaggle_description)
+    _write_kaggle_metadata(
+        args.output_dir / "dataset-metadata.json",
+        description=kaggle_description,
+        metadata_path=args.metadata,
+    )
 
     image_bytes = sum((release_images / str(row["file_name"])).stat().st_size for row in rows)
     starter_image_bytes = sum(
@@ -349,7 +487,7 @@ def main() -> int:
                 "image_count": clip_manifest.get("image_count"),
                 "path": "optional/clip_embeddings.parquet",
             }
-            if args.clip_embeddings.is_file()
+            if args.include_clip_embeddings and args.clip_embeddings.is_file()
             else {"included": False}
         ),
         "checksums_file": "checksums.sha256",

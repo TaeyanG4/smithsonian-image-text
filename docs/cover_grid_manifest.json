@@ -1,5 +1,5 @@
 {
-  "purpose": "Kaggle dataset cover",
+  "purpose": "Kaggle dataset cover banner (2:1 target crop)",
   "model_id": "openai/clip-vit-base-patch32",
   "model_revision": "3d74acf9a28c67741b2f4f2ea7635f0aaf6f0268",
   "selection": [
@@ -94,7 +94,7 @@
       "clip_score": 0.275198370218277
     }
   ],
-  "output": "H:\\dev\\kaggle-data\\smithsonian-image-text\\docs\\cover_grid.jpg",
+  "output": "H:\\dev\\kaggle-data\\smithsonian-image-text\\docs\\dataset-cover-image.jpg",
   "width": 1260,
-  "height": 1416
+  "height": 630
 }

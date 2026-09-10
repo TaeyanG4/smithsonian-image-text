@@ -1,0 +1,15 @@
+{
+  "id": "taeyangg4/smithsonian-25k-starter-eda",
+  "title": "Smithsonian 25K Museum Images - Starter EDA",
+  "code_file": "starter_eda.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": false,
+  "enable_gpu": false,
+  "enable_internet": false,
+  "dataset_sources": [
+    "taeyangg4/smithsonian-25k-museum-image-text"
+  ],
+  "competition_sources": [],
+  "kernel_sources": []
+}

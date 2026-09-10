@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a deterministic 3x3 Kaggle cover grid from final release images."""
+"""Build a deterministic 3x3 Kaggle cover banner from final release images."""
 
 from __future__ import annotations
 
@@ -58,11 +58,14 @@ def main() -> int:
     parser.add_argument(
         "--image-dir", type=Path, default=ROOT / "data" / "images" / "production"
     )
-    parser.add_argument("--output", type=Path, default=ROOT / "docs" / "cover_grid.jpg")
+    parser.add_argument(
+        "--output", type=Path, default=ROOT / "docs" / "dataset-cover-image.jpg"
+    )
     parser.add_argument(
         "--manifest", type=Path, default=ROOT / "docs" / "cover_grid_manifest.json"
     )
-    parser.add_argument("--tile", type=int, default=420)
+    parser.add_argument("--tile-width", type=int, default=420)
+    parser.add_argument("--tile-height", type=int, default=180)
     args = parser.parse_args()
 
     try:
@@ -122,19 +125,26 @@ def main() -> int:
             }
         )
 
-    tile = args.tile
-    label_height = 52
-    canvas = Image.new("RGB", (tile * 3, (tile + label_height) * 3), "white")
-    font = ImageFont.load_default(size=20)
+    tile_width = args.tile_width
+    tile_height = args.tile_height
+    label_height = 30
+    canvas = Image.new(
+        "RGB", (tile_width * 3, (tile_height + label_height) * 3), "white"
+    )
+    font = ImageFont.load_default(size=16)
     for index, item in enumerate(chosen):
         source_path = args.image_dir / item["file_name"]
         with Image.open(source_path) as source:
-            image = ImageOps.fit(source.convert("RGB"), (tile, tile), method=Image.Resampling.LANCZOS)
-        x = (index % 3) * tile
-        y = (index // 3) * (tile + label_height)
+            image = ImageOps.fit(
+                source.convert("RGB"),
+                (tile_width, tile_height),
+                method=Image.Resampling.LANCZOS,
+            )
+        x = (index % 3) * tile_width
+        y = (index // 3) * (tile_height + label_height)
         canvas.paste(image, (x, y))
         draw = ImageDraw.Draw(canvas)
-        draw.text((x + 10, y + tile + 13), item["category"], fill="black", font=font)
+        draw.text((x + 8, y + tile_height + 6), item["category"], fill="black", font=font)
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.manifest.parent.mkdir(parents=True, exist_ok=True)
@@ -142,7 +152,7 @@ def main() -> int:
     args.manifest.write_text(
         json.dumps(
             {
-                "purpose": "Kaggle dataset cover",
+                "purpose": "Kaggle dataset cover banner (2:1 target crop)",
                 "model_id": model_id,
                 "model_revision": revision,
                 "selection": chosen,

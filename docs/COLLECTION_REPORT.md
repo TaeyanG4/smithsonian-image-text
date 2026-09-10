@@ -269,10 +269,12 @@ Technology, 700 Historical Objects, 180 Archaeology, 340 Space & Aviation, 700 D
 Coins/Stamps/Documents, and 300 Other. It inherits the full dataset split assignment and has zero
 object-level split leakage.
 
-## Phase 12 — optional embeddings
+## Phase 12 — optional embedding side artifact
 
-V1 includes an optional CLIP ViT-B/32 image-embedding side artifact while keeping images and
-Smithsonian metadata as the source-of-truth:
+A CLIP ViT-B/32 image-embedding artifact was built locally to validate the side-artifact path and to
+help select representative cover images, while images and Smithsonian metadata remain the
+source-of-truth. **The embedding artifact is intentionally excluded from the base V1 Kaggle package**
+and can be versioned independently:
 
 - model: `openai/clip-vit-base-patch32`;
 - pinned model revision: `3d74acf9a28c67741b2f4f2ea7635f0aaf6f0268`;
@@ -284,8 +286,9 @@ Smithsonian metadata as the source-of-truth:
 
 The manifest records the exact model revision, Transformers/PyTorch versions, image preprocessing,
 source-metadata SHA256, output SHA256, and vector-norm range. A retrieval smoke check returned relevant
-spacecraft and Japanese bowl results for natural-language queries. This artifact is optional convenience
-data and can be replaced/versioned independently without changing the canonical image rows.
+spacecraft and Japanese bowl results for natural-language queries. This local artifact is optional
+convenience data and can be replaced/versioned independently without changing the canonical image rows
+or inflating the base release.
 
 ## Phases 13-14 — final QA and local release
 
@@ -314,11 +317,11 @@ directory itself.
 ## Phases 15-17 — publication assets and distribution plan
 
 `docs/KAGGLE_PAGE.md` contains the Kaggle description. `notebooks/search_25k_museum_images.ipynb`
-provides the intended first zero-shot sentence-retrieval demo using the optional CLIP embeddings, and
-`notebooks/starter_eda.ipynb` provides the lightweight EDA/training path. A deterministic 3x3 cover
-grid uses one release image from each broad category and has a source/selection manifest. These assets
-are included in the local release. Publication remains deliberately separate from the deterministic
-build scripts and is performed only by an explicit external CLI/API action.
+remains an optional side-artifact retrieval demo, while `notebooks/starter_eda.ipynb` is the base V1
+public quick-start path. A deterministic 2:1 cover banner uses one release image from each broad
+category and has a source/selection manifest. Rich Kaggle resource metadata includes file descriptions
+and column descriptions for the canonical table. Publication remains deliberately separate from the
+deterministic build scripts and is performed only by an explicit external CLI/API action.
 
 `docs/DISTRIBUTION.md` defines the versioning/subset strategy for Kaggle and a possible Hugging Face
 mirror while keeping model-derived embeddings explicitly optional.

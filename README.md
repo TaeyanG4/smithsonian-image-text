@@ -1,8 +1,8 @@
-# 25K Museum Images with Captions
+# Smithsonian 25K Museum Image-Text Dataset
 
-Reproducible tooling for a Kaggle-ready Smithsonian Open Access image-text dataset.
+Reproducible tooling for a rights-audited Smithsonian Open Access image-text dataset.
 
-**Kaggle subtitle:** CC0 Smithsonian images and metadata for computer vision, CLIP and VLMs
+**Kaggle subtitle:** 24,972 CC0 images, rich metadata, leakage-safe splits and a 5K starter set
 
 ## V1 scope
 
@@ -19,8 +19,9 @@ Reproducible tooling for a Kaggle-ready Smithsonian Open Access image-text datas
 
 The local V1 build has progressed through discovery, filtering, balanced selection, the mandatory
 1K image pilot, production collection, image QA, deterministic text composition, object-level
-splitting, the 5K starter subset, and final release validation. External Kaggle publication has
-**not** been performed.
+splitting, the 5K starter subset, and final release validation. Publication metadata, a Kaggle-ready
+cover, and a starter notebook are maintained in the repository; external publication remains an
+explicit release action.
 
 Current build summary (2026-09-10):
 
@@ -41,9 +42,11 @@ Current build summary (2026-09-10):
 - Phase 11: balanced **5,000-row** starter subset from **4,621** objects, inheriting the same split.
 - Phase 13/14 local release: **PASS**, 24,972 main rows + 5,000 starter rows, zero missing/decode/
   dimension/rights/split-leakage/checksum failures, final apparent package about **1.036 GB**.
-- Phase 12/15/16: optional CLIP ViT-B/32 image embeddings, a zero-shot sentence retrieval notebook,
-  Kaggle page copy, and a deterministic 3x3 cover grid are prepared locally; publication remains a
-  separate external action.
+- Phase 12: CLIP ViT-B/32 embeddings can be built as a separately versioned side artifact, but are
+  intentionally excluded from the base V1 package so canonical images/metadata stay lightweight and
+  model-independent.
+- Publication assets: Kaggle page copy, a deterministic 2:1 cover banner, rich file/column metadata,
+  and a starter EDA notebook are prepared for the public release.
 
 Important findings and decisions are documented in:
 
@@ -103,13 +106,13 @@ The collection scripts are ordered to preserve the required gates:
 discover_metadata.py -> build_candidate_tables.py -> select_candidates.py
 -> run_pilot.py -> download_images.py -> qa_images.py
 -> build_metadata.py -> create_splits.py -> build_starter.py
--> build_clip_embeddings.py -> build_cover.py
 -> build_release.py -> validate_release.py
 ```
 
-Phase 12 embeddings are optional convenience data. V1 includes a small normalized float16 CLIP
-ViT-B/32 embedding artifact keyed by `image_id`, with the exact model revision and preprocessing
-recorded separately. Images and Smithsonian metadata remain the source-of-truth.
+Phase 12 embeddings are optional convenience data and are **not shipped in base V1**. The repository
+retains `build_clip_embeddings.py` and the exact side-artifact provenance strategy so embeddings can be
+published independently without changing the canonical image rows or forcing model dependencies on
+base-dataset users.
 
 ## Repository layout
 
