@@ -119,7 +119,3 @@ data/                       Local build products; large files are gitignored
 - `docs/KAGGLE_PUBLISHING.md`
 
 Machine-readable controls live in `config/collection.yaml` and `config/eligibility_rules.yaml`.
-
-## Publishing and credentials
-
-No Kaggle API key is required to rebuild the local dataset package. This repository does not store Kaggle, GitHub, Smithsonian, OAuth, browser-session, or other credentials. Publishing to Kaggle is intentionally a separate authenticated action, and live Kaggle metadata should always be read back after a write.

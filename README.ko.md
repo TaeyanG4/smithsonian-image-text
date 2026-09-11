@@ -119,7 +119,3 @@ data/                       로컬 빌드 산출물; 대용량 파일은 gitigno
 - `docs/KAGGLE_PUBLISHING.md`
 
 기계 판독용 제어 설정은 `config/collection.yaml`과 `config/eligibility_rules.yaml`에 있습니다.
-
-## 배포와 자격증명
-
-로컬 데이터셋 패키지를 다시 만드는 데 Kaggle API 키는 필요하지 않습니다. 이 저장소에는 Kaggle, GitHub, Smithsonian, OAuth, 브라우저 세션 또는 기타 자격증명을 저장하지 않습니다. Kaggle 배포는 별도의 인증 작업으로 수행하며, Kaggle 메타데이터를 수정한 뒤에는 항상 live readback으로 실제 반영 여부를 확인합니다.

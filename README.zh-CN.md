@@ -119,7 +119,3 @@ data/                       本地构建产物；大型文件由 gitignore 忽�
 - `docs/KAGGLE_PUBLISHING.md`
 
 机器可读的控制配置位于 `config/collection.yaml` 和 `config/eligibility_rules.yaml`。
-
-## 发布与凭证
-
-重新构建本地数据集包不需要 Kaggle API key。本仓库不会保存 Kaggle、GitHub、Smithsonian、OAuth、浏览器会话或其他凭证。发布到 Kaggle 始终作为独立的认证操作执行，并且每次写入 Kaggle 元数据后都应通过 live readback 验证实际结果。

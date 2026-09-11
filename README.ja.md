@@ -119,7 +119,3 @@ data/                       ローカルビルド生成物。大容量ファイ�
 - `docs/KAGGLE_PUBLISHING.md`
 
 機械可読な制御設定は `config/collection.yaml` と `config/eligibility_rules.yaml` にあります。
-
-## 公開と認証情報
-
-ローカルのデータセットパッケージを再構築するために Kaggle API キーは不要です。このリポジトリには Kaggle、GitHub、Smithsonian、OAuth、ブラウザセッション、その他の認証情報を保存しません。Kaggle への公開は独立した認証済みアクションとして行い、Kaggle メタデータを書き換えた後は必ず live readback で反映を確認します。
